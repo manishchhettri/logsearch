@@ -252,7 +252,3 @@ mvn spring-boot:run -Dspring-boot.run.arguments="start --logs-dir=./logs"
 ## License
 
 This is an internal tool. Modify as needed for your use case.
-
-## Support
-
-For issues or questions, contact your platform team.
