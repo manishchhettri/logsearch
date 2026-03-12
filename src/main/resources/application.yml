@@ -14,6 +14,10 @@ log-search:
   # Date extraction from filename (regex with named group)
   filename-date-pattern: "server-(\\d{4})(\\d{2})(\\d{2})\\.log"
 
+  # Log line pattern (regex with 3 capture groups: timestamp, user, message)
+  # Default: [timestamp] [user] message
+  log-line-pattern: "^\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*(.*)$"
+
   # Date format in log lines (Java DateTimeFormatter pattern)
   log-datetime-format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
 

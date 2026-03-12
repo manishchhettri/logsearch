@@ -26,6 +26,20 @@ log-search:
   #   app-(\\d{4})-(\\d{2})-(\\d{2})\\.log
   filename-date-pattern: "server-(\\d{4})(\\d{2})(\\d{2})\\.log"
 
+  # Log line pattern (regex with 3 capture groups: timestamp, user, message)
+  # Default pattern matches: [timestamp] [user] message
+  # Capture groups must be in order: (timestamp)(user)(message)
+  # Examples:
+  #   Default:  ^\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*(.*)$
+  #             Matches: [2026-03-12T14:30:45.123+13:00] [john.doe] Application started
+  #
+  #   Apache:   ^(\\S+)\\s+(\\S+)\\s+(.*)$
+  #             Matches: 2026-03-12T14:30:45.123 john.doe Application started
+  #
+  #   Syslog:   ^(\\S+\\s+\\d+\\s+\\S+)\\s+(\\S+)\\s+(.*)$
+  #             Matches: Mar 12 14:30:45 john.doe Application started
+  log-line-pattern: "^\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*(.*)$"
+
   # Date format in log lines (Java DateTimeFormatter pattern)
   # Examples:
   #   yyyy-MM-dd'T'HH:mm:ss.SSSXXX    for: 2026-03-12T14:30:45.123+13:00

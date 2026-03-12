@@ -11,6 +11,7 @@ public class LogSearchProperties {
     private String indexDir;
     private String filePattern;
     private String filenameDatePattern;
+    private String logLinePattern;
     private String logDatetimeFormat;
     private String timezone;
     private int retentionDays;
@@ -47,6 +48,14 @@ public class LogSearchProperties {
 
     public void setFilenameDatePattern(String filenameDatePattern) {
         this.filenameDatePattern = filenameDatePattern;
+    }
+
+    public String getLogLinePattern() {
+        return logLinePattern;
+    }
+
+    public void setLogLinePattern(String logLinePattern) {
+        this.logLinePattern = logLinePattern;
     }
 
     public String getLogDatetimeFormat() {

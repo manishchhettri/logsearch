@@ -125,6 +125,9 @@ log-search:
   # Date extraction from filename
   filename-date-pattern: "server-(\\d{4})(\\d{2})(\\d{2})\\.log"
 
+  # Log line pattern (regex with 3 capture groups: timestamp, user, message)
+  log-line-pattern: "^\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*(.*)$"
+
   # Date format in log lines
   log-datetime-format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
 
@@ -143,7 +146,7 @@ log-search:
 
 ## Log Format
 
-The application expects logs in this format:
+The default log format is:
 
 ```
 [timestamp] [user] message
@@ -157,11 +160,41 @@ Example:
 
 ### Customizing for Different Formats
 
-To support different log formats, modify `LogParser.java`:
+The log format is fully configurable! Edit `config/application.yml` to match your log format:
 
-1. Update the `LOG_PATTERN` regex to match your format
-2. Adjust the parsing logic in `parseLine()`
-3. Update `log-datetime-format` in `application.yml`
+```yaml
+log-search:
+  # Log line pattern with 3 capture groups: (timestamp)(user)(message)
+  log-line-pattern: "^\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*(.*)$"
+
+  # Date format for parsing timestamps
+  log-datetime-format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
+```
+
+**Examples of different log formats:**
+
+**Default format** - `[timestamp] [user] message`:
+```yaml
+log-line-pattern: "^\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*(.*)$"
+log-datetime-format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
+```
+
+**Space-separated format** - `timestamp user message`:
+```yaml
+log-line-pattern: "^(\\S+)\\s+(\\S+)\\s+(.*)$"
+log-datetime-format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
+```
+
+**Syslog format** - `Mar 12 14:30:45 user message`:
+```yaml
+log-line-pattern: "^(\\S+\\s+\\d+\\s+\\S+)\\s+(\\S+)\\s+(.*)$"
+log-datetime-format: "MMM dd HH:mm:ss"
+```
+
+**Important**: The regex must have exactly 3 capture groups in this order:
+1. Timestamp (will be parsed using `log-datetime-format`)
+2. User
+3. Message
 
 ## How It Works
 

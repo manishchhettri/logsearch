@@ -18,22 +18,23 @@ public class LogParser {
     private static final Logger log = LoggerFactory.getLogger(LogParser.class);
 
     private final LogSearchProperties properties;
+    private final Pattern logPattern;
 
     public LogParser(LogSearchProperties properties) {
         this.properties = properties;
-    }
 
-    // Pattern to match: [timestamp] [user] message
-    private static final Pattern LOG_PATTERN = Pattern.compile(
-            "^\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*(.*)$"
-    );
+        // Compile the log line pattern from configuration
+        // Default: [timestamp] [user] message
+        this.logPattern = Pattern.compile(properties.getLogLinePattern());
+        log.info("Initialized LogParser with pattern: {}", properties.getLogLinePattern());
+    }
 
     public LogEntry parseLine(String line, String sourceFile, long lineNumber) {
         if (line == null || line.trim().isEmpty()) {
             return null;
         }
 
-        Matcher matcher = LOG_PATTERN.matcher(line);
+        Matcher matcher = logPattern.matcher(line);
         if (!matcher.matches()) {
             log.debug("Line {} in {} does not match expected pattern", lineNumber, sourceFile);
             return null;
