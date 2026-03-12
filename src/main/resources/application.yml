@@ -1,0 +1,34 @@
+server:
+  port: 8080
+
+log-search:
+  # Directory containing log files to index
+  logs-dir: ${LOGS_DIR:./logs}
+
+  # Directory where Lucene indexes will be stored
+  index-dir: ${INDEX_DIR:./.log-search/indexes}
+
+  # Log file pattern (regex)
+  file-pattern: "server-\\d{8}\\.log"
+
+  # Date extraction from filename (regex with named group)
+  filename-date-pattern: "server-(\\d{4})(\\d{2})(\\d{2})\\.log"
+
+  # Date format in log lines (Java DateTimeFormatter pattern)
+  log-datetime-format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
+
+  # Timezone for parsing logs
+  timezone: "Pacific/Auckland"
+
+  # Number of days to retain indexes (0 = unlimited)
+  retention-days: 30
+
+  # Auto-watch for new log files
+  auto-watch: true
+
+  # Watch interval in seconds
+  watch-interval: 60
+
+logging:
+  level:
+    com.lsearch.logsearch: INFO

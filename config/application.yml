@@ -1,0 +1,52 @@
+# External Log Search Configuration
+# Place this file alongside the JAR or in a ./config/ directory
+# Override any settings by editing this file - no need to rebuild the JAR!
+
+server:
+  port: 8080
+
+log-search:
+  # Directory containing log files to index
+  logs-dir: ${LOGS_DIR:./logs}
+
+  # Directory where Lucene indexes will be stored
+  index-dir: ${INDEX_DIR:./.log-search/indexes}
+
+  # Log file pattern (regex) - customize for your log file naming
+  # Examples:
+  #   server-\\d{8}\\.log     matches: server-20260312.log
+  #   app-\\d{4}-\\d{2}-\\d{2}\\.log  matches: app-2026-03-12.log
+  #   .*\\.log                 matches: any .log file
+  file-pattern: "server-\\d{8}\\.log"
+
+  # Date extraction from filename (regex with capture groups)
+  # Groups: (year)(month)(day)
+  # Examples:
+  #   server-(\\d{4})(\\d{2})(\\d{2})\\.log
+  #   app-(\\d{4})-(\\d{2})-(\\d{2})\\.log
+  filename-date-pattern: "server-(\\d{4})(\\d{2})(\\d{2})\\.log"
+
+  # Date format in log lines (Java DateTimeFormatter pattern)
+  # Examples:
+  #   yyyy-MM-dd'T'HH:mm:ss.SSSXXX    for: 2026-03-12T14:30:45.123+13:00
+  #   yyyy-MM-dd HH:mm:ss             for: 2026-03-12 14:30:45
+  #   dd/MMM/yyyy:HH:mm:ss Z          for: 12/Mar/2026:14:30:45 +1300
+  log-datetime-format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
+
+  # Timezone for parsing logs (use your local timezone)
+  # Examples: Pacific/Auckland, America/New_York, UTC, Asia/Tokyo
+  timezone: "Pacific/Auckland"
+
+  # Number of days to retain indexes (0 = unlimited)
+  # Old indexes are automatically deleted to save disk space
+  retention-days: 30
+
+  # Auto-watch for new log files
+  auto-watch: true
+
+  # Watch interval in seconds (how often to check for new files)
+  watch-interval: 60
+
+logging:
+  level:
+    com.lsearch.logsearch: INFO
