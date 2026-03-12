@@ -19,21 +19,25 @@ A lightweight, embedded Lucene-based log search application designed for develop
 
 ## Quick Start
 
-### 1. Build the application
+### Option 1: Use Pre-built JAR (Recommended)
 
+The repository includes a pre-built JAR file, so you can start immediately without building:
+
+**1. Clone the repository**
 ```bash
-mvn clean package
+git clone <your-repo-url>
+cd log-search
 ```
 
-This creates an executable JAR: `target/log-search-1.0.0.jar`
+The JAR file is already available at: `target/log-search-1.0.0.jar`
 
-### 2. Prepare your logs
+**2. Prepare your logs
 
 Place your log files in a directory (e.g., `./logs`). The default pattern expects files named like:
 - `server-20260312.log`
 - `server-20260313.log`
 
-### 3. Run the application
+**3. Run the application**
 
 ```bash
 # Simple start - indexes logs and starts web server
@@ -47,6 +51,25 @@ The application will:
 1. Index all log files in the specified directory
 2. Start the web server on http://localhost:8080
 3. Automatically open your browser
+
+---
+
+### Option 2: Build from Source
+
+If you want to modify the code or build it yourself:
+
+**1. Build the application**
+```bash
+mvn clean package
+```
+
+This creates an executable JAR: `target/log-search-1.0.0.jar`
+
+**2. Prepare your logs and run**
+
+Follow steps 2-3 from Option 1 above.
+
+---
 
 ## Usage
 
@@ -257,7 +280,7 @@ For 2GB of logs per day, with full-text search.
 ### Project Structure
 
 ```
-src/main/java/com/company/logsearch/
+src/main/java/com/lsearch/logsearch/
 ├── config/          # Configuration properties
 ├── controller/      # REST API controllers
 ├── model/           # Domain models
@@ -270,6 +293,10 @@ src/main/java/com/company/logsearch/
 ```
 
 ### Building
+
+**Note**: Building is optional! A pre-built JAR is included in the repository at `target/log-search-1.0.0.jar`.
+
+If you want to rebuild or modify the code:
 
 ```bash
 # Build
