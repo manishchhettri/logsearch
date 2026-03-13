@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Log Search</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -14,22 +15,122 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: #f5f5f5;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 0;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            background: #f8f9fa;
+            color: #333;
             padding: 20px;
+            overflow-y: auto;
+            border-right: 1px solid #e0e0e0;
+        }
+
+        .sidebar h2 {
+            font-size: 16px;
+            margin-bottom: 20px;
+            color: #495057;
+            font-weight: 600;
+        }
+
+        .facet-group {
+            margin-bottom: 20px;
+        }
+
+        .facet-group h3 {
+            font-size: 11px;
+            color: #6c757d;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        .facet-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            margin-bottom: 3px;
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 12px;
+        }
+
+        .facet-item:hover {
+            background: #e7f3ff;
+            border-color: #90caf9;
+        }
+
+        .facet-item.active {
+            background: #d0e8ff;
+            border-color: #64b5f6;
+        }
+
+        .facet-label {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #495057;
+        }
+
+        .facet-count {
+            background: #e9ecef;
+            color: #495057;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+            flex-shrink: 0;
         }
 
         .container {
-            max-width: 1400px;
-            margin: 0 auto;
             background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             padding: 30px;
+            overflow-y: auto;
+        }
+
+        .header-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
         }
 
         h1 {
             color: #333;
-            margin-bottom: 30px;
-            font-size: 28px;
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-utility {
+            background: #f6f8fa;
+            color: #24292e;
+            border: 1px solid #d0d7de;
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
+        .btn-utility:hover {
+            background: #eef1f5;
+            border-color: #c0c7ce;
         }
 
         .search-form {
@@ -68,22 +169,24 @@
         }
 
         button {
-            padding: 10px 20px;
+            padding: 10px 24px;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 500;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all 0.2s;
         }
 
         .btn-primary {
-            background: #007bff;
+            background: #0366d6;
             color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
         }
 
         .btn-primary:hover {
-            background: #0056b3;
+            background: #0256c5;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.16);
         }
 
         .btn-secondary {
@@ -222,56 +325,215 @@
             color: #666;
         }
 
+        .analytics-section {
+            margin-bottom: 20px;
+            padding: 16px;
+            background: #fafbfc;
+            border-radius: 6px;
+            border: 1px solid #e1e4e8;
+        }
+
+        .analytics-section h2 {
+            font-size: 14px;
+            margin-bottom: 12px;
+            color: #24292e;
+            font-weight: 600;
+        }
+
+        .pattern-alerts {
+            display: grid;
+            gap: 10px;
+        }
+
+        .pattern-alert {
+            padding: 12px 15px;
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #856404;
+        }
+
+        .pattern-alert.critical {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 250px;
+            margin-top: 15px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border: 1px solid #e1e4e8;
+            text-align: center;
+        }
+
+        .stat-card .value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #0366d6;
+            margin-bottom: 4px;
+        }
+
+        .stat-card .label {
+            font-size: 11px;
+            color: #586069;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }
+
         .hidden {
             display: none;
+        }
+
+        .analytics-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: #f6f8fa;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 16px;
+            transition: background 0.2s;
+        }
+
+        .analytics-header:hover {
+            background: #eef1f5;
+        }
+
+        .analytics-header h2 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #24292e;
+            margin: 0;
+            flex: 1;
+        }
+
+        .analytics-toggle-icon {
+            font-size: 12px;
+            color: #586069;
+            transition: transform 0.2s;
+        }
+
+        .analytics-toggle-icon.collapsed {
+            transform: rotate(-90deg);
+        }
+
+        @media (max-width: 1024px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                max-height: 400px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Log Search</h1>
-
-        <div class="search-form">
-            <div class="form-row">
-                <label for="query">Search Query:</label>
-                <input type="text" id="query" placeholder="Enter search terms (leave empty for all logs)">
+    <div class="main-container">
+        <aside class="sidebar" id="sidebar">
+            <h2>Faceted Filters</h2>
+            <div id="facetsContainer">
+                <p style="color: #6c757d; font-size: 12px;">Run a search to see filters</p>
             </div>
+        </aside>
 
-            <div class="form-row">
-                <label for="startTime">Start Time:</label>
-                <input type="datetime-local" id="startTime" required>
-            </div>
-
-            <div class="form-row">
-                <label for="endTime">End Time:</label>
-                <input type="datetime-local" id="endTime" required>
-            </div>
-
-            <div class="form-row">
-                <label></label>
-                <div class="button-group">
-                    <button class="btn-primary" onclick="search()">Search</button>
-                    <button class="btn-secondary" onclick="setLast24Hours()">Last 24 Hours</button>
-                    <button class="btn-secondary" onclick="triggerIndexing()">Re-Index Logs</button>
+        <main class="container">
+            <div class="header-section">
+                <h1>Log Search</h1>
+                <div class="header-actions">
+                    <button class="btn-utility" onclick="triggerIndexing()">Re-Index Logs</button>
                 </div>
             </div>
-        </div>
 
-        <div id="status" class="status hidden"></div>
+            <div class="search-form">
+                <div class="form-row">
+                    <label for="query">Search Query:</label>
+                    <input type="text" id="query" placeholder="Enter search terms (leave empty for all logs)">
+                </div>
 
-        <div id="results" class="hidden">
-            <div id="resultsInfo" class="results-info"></div>
-            <div id="resultsContainer"></div>
-            <div id="pagination" class="pagination"></div>
-        </div>
+                <div class="form-row">
+                    <label for="startTime">Start Time:</label>
+                    <input type="datetime-local" id="startTime" required>
+                </div>
 
-        <div id="loading" class="loading hidden">Searching...</div>
-        <div id="noResults" class="no-results hidden">No results found</div>
+                <div class="form-row">
+                    <label for="endTime">End Time:</label>
+                    <input type="datetime-local" id="endTime" required>
+                </div>
+
+                <div class="form-row">
+                    <label></label>
+                    <button class="btn-primary" onclick="search()">Search</button>
+                </div>
+            </div>
+
+            <div id="status" class="status hidden"></div>
+
+            <!-- Analytics Section -->
+            <div id="analytics" class="hidden">
+                <div class="analytics-header" onclick="toggleAnalytics()">
+                    <h2>Analytics & Insights</h2>
+                    <span class="analytics-toggle-icon" id="analyticsToggleIcon">▼</span>
+                </div>
+
+                <div id="analyticsContent">
+                    <!-- Pattern Alerts -->
+                    <div id="patternsSection" class="analytics-section hidden">
+                        <h2>Detected Patterns & Alerts</h2>
+                        <div id="patternsContainer" class="pattern-alerts"></div>
+                    </div>
+
+                    <!-- Stats Overview -->
+                    <div id="statsSection" class="analytics-section hidden">
+                        <h2>Overview</h2>
+                        <div class="stats-grid" id="statsGrid"></div>
+                    </div>
+
+                    <!-- Timeline Chart -->
+                    <div id="timelineSection" class="analytics-section hidden">
+                        <h2>Timeline - Hourly Distribution</h2>
+                        <div class="chart-container">
+                            <canvas id="timelineChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="results" class="hidden">
+                <div id="resultsInfo" class="results-info"></div>
+                <div id="resultsContainer"></div>
+                <div id="pagination" class="pagination"></div>
+            </div>
+
+            <div id="loading" class="loading hidden">Searching...</div>
+            <div id="noResults" class="no-results hidden">No results found</div>
+        </main>
     </div>
 
     <script>
         let currentPage = 0;
         const pageSize = 50;
+        let timelineChart = null;
+        let analyticsVisible = true;
+        let currentAggregations = null;
 
         function setLast24Hours() {
             const now = new Date();
@@ -306,6 +568,246 @@
             document.getElementById('results').classList.add('hidden');
             document.getElementById('loading').classList.add('hidden');
             document.getElementById('noResults').classList.add('hidden');
+        }
+
+        function toggleAnalytics() {
+            analyticsVisible = !analyticsVisible;
+            document.getElementById('analyticsContent').style.display = analyticsVisible ? 'block' : 'none';
+            const icon = document.getElementById('analyticsToggleIcon');
+            if (analyticsVisible) {
+                icon.classList.remove('collapsed');
+            } else {
+                icon.classList.add('collapsed');
+            }
+        }
+
+        async function fetchAggregations() {
+            const query = document.getElementById('query').value;
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+
+            try {
+                const startISO = new Date(startTime).toISOString();
+                const endISO = new Date(endTime).toISOString();
+
+                const params = new URLSearchParams({
+                    startTime: startISO,
+                    endTime: endISO
+                });
+
+                if (query) {
+                    params.append('query', query);
+                }
+
+                const response = await fetch(`/api/aggregations?${params}`);
+
+                if (!response.ok) {
+                    throw new Error('Aggregations failed');
+                }
+
+                const aggregations = await response.json();
+                currentAggregations = aggregations;
+                displayAggregations(aggregations);
+
+            } catch (error) {
+                console.error('Failed to fetch aggregations:', error);
+            }
+        }
+
+        function displayAggregations(agg) {
+            if (!agg || agg.totalHits === 0) {
+                document.getElementById('analytics').classList.add('hidden');
+                return;
+            }
+
+            document.getElementById('analytics').classList.remove('hidden');
+
+            // Display stats
+            displayStats(agg);
+
+            // Display facets in sidebar
+            displayFacets(agg);
+
+            // Display patterns
+            displayPatterns(agg.detectedPatterns);
+
+            // Display timeline
+            displayTimeline(agg.timelineHourly);
+        }
+
+        function displayStats(agg) {
+            const statsGrid = document.getElementById('statsGrid');
+            statsGrid.innerHTML = '';
+
+            const errorCount = agg.levelFacets.find(f => f.value === 'ERROR')?.count || 0;
+            const warnCount = agg.levelFacets.find(f => f.value === 'WARN')?.count || 0;
+            const topException = agg.exceptionFacets[0];
+
+            const stats = [
+                { label: 'Total Logs', value: agg.totalHits },
+                { label: 'Errors', value: errorCount },
+                { label: 'Warnings', value: warnCount },
+                { label: 'Top Exception', value: topException ? `${topException.value} (${topException.count})` : 'None' }
+            ];
+
+            stats.forEach(stat => {
+                const card = document.createElement('div');
+                card.className = 'stat-card';
+                card.innerHTML = `
+                    <div class="value">${typeof stat.value === 'number' ? stat.value.toLocaleString() : stat.value}</div>
+                    <div class="label">${stat.label}</div>
+                `;
+                statsGrid.appendChild(card);
+            });
+
+            document.getElementById('statsSection').classList.remove('hidden');
+        }
+
+        function displayFacets(agg) {
+            const container = document.getElementById('facetsContainer');
+            container.innerHTML = '';
+
+            const facetGroups = [
+                { title: 'Log Level', facets: agg.levelFacets, type: 'level' },
+                { title: 'Exception Type', facets: agg.exceptionFacets, type: 'exception' },
+                { title: 'Component', facets: agg.loggerFacets, type: 'logger' },
+                { title: 'User', facets: agg.userFacets, type: 'user' },
+                { title: 'Source File', facets: agg.fileFacets, type: 'file' }
+            ];
+
+            facetGroups.forEach(group => {
+                if (group.facets && group.facets.length > 0) {
+                    const groupDiv = document.createElement('div');
+                    groupDiv.className = 'facet-group';
+
+                    const title = document.createElement('h3');
+                    title.textContent = group.title;
+                    groupDiv.appendChild(title);
+
+                    group.facets.slice(0, 5).forEach(facet => {
+                        const item = document.createElement('div');
+                        item.className = 'facet-item';
+                        item.innerHTML = `
+                            <span class="facet-label" title="${escapeHtml(facet.value)}">${escapeHtml(facet.value)}</span>
+                            <span class="facet-count">${facet.count}</span>
+                        `;
+                        item.onclick = () => applyFacetFilter(group.type, facet.value);
+                        groupDiv.appendChild(item);
+                    });
+
+                    container.appendChild(groupDiv);
+                }
+            });
+        }
+
+        function applyFacetFilter(type, value) {
+            // Add the facet value to the search query
+            const queryInput = document.getElementById('query');
+            const currentQuery = queryInput.value;
+
+            // Build field-specific query
+            let fieldQuery;
+            switch(type) {
+                case 'level':
+                    fieldQuery = `level:${value}`;
+                    break;
+                case 'exception':
+                    fieldQuery = value;
+                    break;
+                case 'logger':
+                    fieldQuery = `logger:${value}`;
+                    break;
+                case 'user':
+                    fieldQuery = `user:${value}`;
+                    break;
+                case 'file':
+                    fieldQuery = `sourceFile:${value}`;
+                    break;
+                default:
+                    fieldQuery = value;
+            }
+
+            // Append to existing query
+            queryInput.value = currentQuery ? `${currentQuery} AND ${fieldQuery}` : fieldQuery;
+
+            // Re-run search
+            search(0);
+        }
+
+        function displayPatterns(patterns) {
+            if (!patterns || patterns.length === 0) {
+                document.getElementById('patternsSection').classList.add('hidden');
+                return;
+            }
+
+            const container = document.getElementById('patternsContainer');
+            container.innerHTML = '';
+
+            patterns.forEach(pattern => {
+                const alert = document.createElement('div');
+                const isCritical = pattern.toLowerCase().includes('memory') ||
+                                 pattern.toLowerCase().includes('spike');
+                alert.className = isCritical ? 'pattern-alert critical' : 'pattern-alert';
+                alert.textContent = pattern;
+                container.appendChild(alert);
+            });
+
+            document.getElementById('patternsSection').classList.remove('hidden');
+        }
+
+        function displayTimeline(timelineData) {
+            if (!timelineData || Object.keys(timelineData).length === 0) {
+                document.getElementById('timelineSection').classList.add('hidden');
+                return;
+            }
+
+            document.getElementById('timelineSection').classList.remove('hidden');
+
+            // Prepare data for chart
+            const labels = Object.keys(timelineData).map(ts => {
+                const date = new Date(ts);
+                return date.toLocaleTimeString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            });
+            const values = Object.values(timelineData);
+
+            // Destroy existing chart if any
+            if (timelineChart) {
+                timelineChart.destroy();
+            }
+
+            // Create new chart
+            const ctx = document.getElementById('timelineChart').getContext('2d');
+            timelineChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Log Count',
+                        data: values,
+                        borderColor: '#007bff',
+                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         async function search(page = 0) {
@@ -346,6 +848,11 @@
 
                 const result = await response.json();
                 displayResults(result);
+
+                // Also fetch aggregations for analytics (non-blocking)
+                if (page === 0) {
+                    fetchAggregations(); // No await - runs in background
+                }
 
             } catch (error) {
                 hideAll();

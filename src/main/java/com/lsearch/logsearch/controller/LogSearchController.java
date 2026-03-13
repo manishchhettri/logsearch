@@ -1,5 +1,6 @@
 package com.lsearch.logsearch.controller;
 
+import com.lsearch.logsearch.model.AggregationResult;
 import com.lsearch.logsearch.model.SearchResult;
 import com.lsearch.logsearch.service.LogFileIndexer;
 import com.lsearch.logsearch.service.LogSearchService;
@@ -70,6 +71,25 @@ public class LogSearchController {
             response.put("message", "Indexing failed: " + e.getMessage());
 
             return ResponseEntity.internalServerError().body(response);
+        }
+    }
+
+    @GetMapping("/aggregations")
+    public ResponseEntity<AggregationResult> getAggregations(
+            @RequestParam(required = false) String query,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) ZonedDateTime startTime,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) ZonedDateTime endTime) {
+
+        try {
+            log.info("Aggregation request - query: '{}', startTime: {}, endTime: {}",
+                    query, startTime, endTime);
+
+            AggregationResult result = searchService.getAggregations(query, startTime, endTime);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            log.error("Aggregation failed", e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 
