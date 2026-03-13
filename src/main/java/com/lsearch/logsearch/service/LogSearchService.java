@@ -80,9 +80,9 @@ public class LogSearchService {
                 // Build query
                 BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder();
 
-                // Text search query (if provided) - search across message and user fields
+                // Text search query (if provided) - search across all text fields
                 if (queryText != null && !queryText.trim().isEmpty()) {
-                    String[] fields = {"message", "user"};
+                    String[] fields = {"message", "user", "level", "thread", "logger"};
                     MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer);
                     Query textQuery = parser.parse(queryText);
                     queryBuilder.add(textQuery, BooleanClause.Occur.MUST);
@@ -177,6 +177,9 @@ public class LogSearchService {
 
         return LogEntry.builder()
                 .timestamp(timestamp)
+                .level(doc.get("level"))
+                .thread(doc.get("thread"))
+                .logger(doc.get("logger"))
                 .user(doc.get("user"))
                 .message(doc.get("message"))
                 .sourceFile(doc.get("sourceFile"))

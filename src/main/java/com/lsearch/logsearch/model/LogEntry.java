@@ -4,6 +4,9 @@ import java.time.ZonedDateTime;
 
 public class LogEntry {
     private ZonedDateTime timestamp;
+    private String level;
+    private String thread;
+    private String logger;
     private String user;
     private String message;
     private String sourceFile;
@@ -12,8 +15,12 @@ public class LogEntry {
     public LogEntry() {
     }
 
-    public LogEntry(ZonedDateTime timestamp, String user, String message, String sourceFile, long lineNumber) {
+    public LogEntry(ZonedDateTime timestamp, String level, String thread, String logger, String user,
+                    String message, String sourceFile, long lineNumber) {
         this.timestamp = timestamp;
+        this.level = level;
+        this.thread = thread;
+        this.logger = logger;
         this.user = user;
         this.message = message;
         this.sourceFile = sourceFile;
@@ -26,6 +33,30 @@ public class LogEntry {
 
     public void setTimestamp(ZonedDateTime timestamp) {
         this.timestamp = timestamp;
+    }
+
+    public String getLevel() {
+        return level;
+    }
+
+    public void setLevel(String level) {
+        this.level = level;
+    }
+
+    public String getThread() {
+        return thread;
+    }
+
+    public void setThread(String thread) {
+        this.thread = thread;
+    }
+
+    public String getLogger() {
+        return logger;
+    }
+
+    public void setLogger(String logger) {
+        this.logger = logger;
     }
 
     public String getUser() {
@@ -66,6 +97,9 @@ public class LogEntry {
 
     public static class Builder {
         private ZonedDateTime timestamp;
+        private String level;
+        private String thread;
+        private String logger;
         private String user;
         private String message;
         private String sourceFile;
@@ -73,6 +107,21 @@ public class LogEntry {
 
         public Builder timestamp(ZonedDateTime timestamp) {
             this.timestamp = timestamp;
+            return this;
+        }
+
+        public Builder level(String level) {
+            this.level = level;
+            return this;
+        }
+
+        public Builder thread(String thread) {
+            this.thread = thread;
+            return this;
+        }
+
+        public Builder logger(String logger) {
+            this.logger = logger;
             return this;
         }
 
@@ -97,7 +146,7 @@ public class LogEntry {
         }
 
         public LogEntry build() {
-            return new LogEntry(timestamp, user, message, sourceFile, lineNumber);
+            return new LogEntry(timestamp, level, thread, logger, user, message, sourceFile, lineNumber);
         }
     }
 }

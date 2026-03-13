@@ -6,6 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -41,23 +43,54 @@ public class LogParser {
         }
 
         try {
+            int groupCount = matcher.groupCount();
+
+            // Group 1 is always timestamp
             String timestampStr = matcher.group(1);
-            String user = matcher.group(2);
-            String message = matcher.group(3);
-
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern(properties.getLogDatetimeFormat());
-            ZonedDateTime timestamp = ZonedDateTime.parse(timestampStr, formatter);
 
-            return LogEntry.builder()
+            // Parse as LocalDateTime first, then apply configured timezone
+            LocalDateTime localDateTime = LocalDateTime.parse(timestampStr, formatter);
+            ZoneId zoneId = ZoneId.of(properties.getTimezone());
+            ZonedDateTime timestamp = ZonedDateTime.of(localDateTime, zoneId);
+
+            LogEntry.Builder builder = LogEntry.builder()
                     .timestamp(timestamp)
-                    .user(user)
-                    .message(message)
                     .sourceFile(sourceFile)
-                    .lineNumber(lineNumber)
-                    .build();
+                    .lineNumber(lineNumber);
+
+            // Support flexible patterns with different numbers of groups
+            // Legacy 3-group pattern: (timestamp)(user)(message)
+            // New 6-group pattern: (timestamp)(thread)(level)(logger)(user)(message)
+            if (groupCount == 3) {
+                // Legacy pattern: [timestamp] [user] message
+                builder.user(matcher.group(2).trim())
+                       .message(matcher.group(3));
+            } else if (groupCount >= 6) {
+                // Enhanced pattern: [timestamp] [thread] [level] [logger] [] [user:xxx] - message
+                String thread = matcher.group(2);
+                String level = matcher.group(3);
+                String logger = matcher.group(4);
+                String user = matcher.group(5);
+                String message = matcher.group(6);
+
+                builder.thread(thread != null ? thread.trim() : null)
+                       .level(level != null ? level.trim() : null)
+                       .logger(logger != null ? logger.trim() : null)
+                       .user(user != null ? user.trim() : null)
+                       .message(message != null ? message : "");
+            } else {
+                log.warn("Unexpected number of capture groups: {} in line {} of {}", groupCount, lineNumber, sourceFile);
+                return null;
+            }
+
+            return builder.build();
 
         } catch (DateTimeParseException e) {
             log.warn("Failed to parse timestamp in line {} of {}: {}", lineNumber, sourceFile, e.getMessage());
+            return null;
+        } catch (Exception e) {
+            log.warn("Failed to parse line {} of {}: {}", lineNumber, sourceFile, e.getMessage());
             return null;
         }
     }

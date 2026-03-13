@@ -116,20 +116,46 @@ public class LogFileIndexer {
 
         try (BufferedReader reader = Files.newBufferedReader(logFile)) {
             String line;
+            LogEntry currentEntry = null;
+            StringBuilder continuationLines = new StringBuilder();
+
             while ((line = reader.readLine()) != null) {
                 lineNumber.incrementAndGet();
 
-                LogEntry entry = logParser.parseLine(line, filename, lineNumber.get());
+                LogEntry parsedEntry = logParser.parseLine(line, filename, lineNumber.get());
 
-                if (entry != null) {
-                    try {
-                        indexService.indexLogEntry(entry);
-                        indexedLines.incrementAndGet();
-                    } catch (IOException e) {
-                        log.error("Failed to index line {} in {}: {}", lineNumber.get(), filename, e.getMessage());
+                if (parsedEntry != null) {
+                    // This is a new log entry - index the previous one if it exists
+                    if (currentEntry != null) {
+                        try {
+                            // Append any continuation lines to the message
+                            if (continuationLines.length() > 0) {
+                                String fullMessage = currentEntry.getMessage() + "\n" + continuationLines.toString();
+                                currentEntry.setMessage(fullMessage);
+                                continuationLines.setLength(0);
+                            }
+                            indexService.indexLogEntry(currentEntry);
+                            indexedLines.incrementAndGet();
+                        } catch (IOException e) {
+                            log.error("Failed to index line {} in {}: {}", currentEntry.getLineNumber(), filename, e.getMessage());
+                            skippedLines.incrementAndGet();
+                        }
                     }
+
+                    // Start tracking this new entry
+                    currentEntry = parsedEntry;
+
                 } else {
-                    skippedLines.incrementAndGet();
+                    // This is a continuation line - append to current entry
+                    if (currentEntry != null) {
+                        if (continuationLines.length() > 0) {
+                            continuationLines.append("\n");
+                        }
+                        continuationLines.append(line);
+                    } else {
+                        // No current entry to attach to, skip this line
+                        skippedLines.incrementAndGet();
+                    }
                 }
 
                 // Commit every 10000 lines to avoid memory issues
@@ -138,10 +164,25 @@ public class LogFileIndexer {
                 }
             }
 
+            // Index the last entry if it exists
+            if (currentEntry != null) {
+                try {
+                    if (continuationLines.length() > 0) {
+                        String fullMessage = currentEntry.getMessage() + "\n" + continuationLines.toString();
+                        currentEntry.setMessage(fullMessage);
+                    }
+                    indexService.indexLogEntry(currentEntry);
+                    indexedLines.incrementAndGet();
+                } catch (IOException e) {
+                    log.error("Failed to index last line in {}: {}", filename, e.getMessage());
+                    skippedLines.incrementAndGet();
+                }
+            }
+
             indexService.commit();
             indexedFiles.add(absolutePath);
 
-            log.info("Completed indexing {}: {} total lines, {} indexed, {} skipped",
+            log.info("Completed indexing {}: {} total lines, {} indexed entries, {} skipped lines (multi-line messages included)",
                     filename, lineNumber.get(), indexedLines.get(), skippedLines.get());
 
         } catch (IOException e) {

@@ -62,8 +62,25 @@ public class LuceneIndexService {
         // Store date for easier retrieval
         doc.add(new StringField("date", date, Field.Store.YES));
 
-        // User field - both searchable and stored
-        doc.add(new TextField("user", entry.getUser(), Field.Store.YES));
+        // Level field - searchable and stored (INFO, WARN, ERROR, etc.)
+        if (entry.getLevel() != null && !entry.getLevel().isEmpty()) {
+            doc.add(new TextField("level", entry.getLevel(), Field.Store.YES));
+        }
+
+        // Thread field - searchable and stored
+        if (entry.getThread() != null && !entry.getThread().isEmpty()) {
+            doc.add(new TextField("thread", entry.getThread(), Field.Store.YES));
+        }
+
+        // Logger field - searchable and stored (class/component name)
+        if (entry.getLogger() != null && !entry.getLogger().isEmpty()) {
+            doc.add(new TextField("logger", entry.getLogger(), Field.Store.YES));
+        }
+
+        // User field - searchable and stored
+        if (entry.getUser() != null && !entry.getUser().isEmpty()) {
+            doc.add(new TextField("user", entry.getUser(), Field.Store.YES));
+        }
 
         // Message - main searchable content
         doc.add(new TextField("message", entry.getMessage(), Field.Store.YES));

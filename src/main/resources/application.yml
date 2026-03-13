@@ -14,8 +14,9 @@ log-search:
   # Date extraction from filename (regex with named group)
   filename-date-pattern: "server-(\\d{4})(\\d{2})(\\d{2})\\.log"
 
-  # Log line pattern (regex with 3 capture groups: timestamp, user, message)
-  # Default: [timestamp] [user] message
+  # Log line pattern (regex - supports 3-group or 6-group patterns)
+  # 3-group: (timestamp)(user)(message)
+  # 6-group: (timestamp)(thread)(level)(logger)(user)(message)
   log-line-pattern: "^\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*(.*)$"
 
   # Date format in log lines (Java DateTimeFormatter pattern)
