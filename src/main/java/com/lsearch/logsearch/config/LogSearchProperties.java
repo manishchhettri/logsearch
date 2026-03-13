@@ -17,6 +17,7 @@ public class LogSearchProperties {
     private int retentionDays;
     private boolean autoWatch;
     private int watchInterval;
+    private boolean enableFallback = true;
 
     public String getLogsDir() {
         return logsDir;
@@ -96,5 +97,13 @@ public class LogSearchProperties {
 
     public void setWatchInterval(int watchInterval) {
         this.watchInterval = watchInterval;
+    }
+
+    public boolean isEnableFallback() {
+        return enableFallback;
+    }
+
+    public void setEnableFallback(boolean enableFallback) {
+        this.enableFallback = enableFallback;
     }
 }

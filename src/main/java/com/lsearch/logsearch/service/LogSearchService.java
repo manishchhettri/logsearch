@@ -5,13 +5,11 @@ import com.lsearch.logsearch.model.LogEntry;
 import com.lsearch.logsearch.model.SearchResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
-import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
@@ -35,7 +33,7 @@ public class LogSearchService {
     private static final Logger log = LoggerFactory.getLogger(LogSearchService.class);
 
     private final LogSearchProperties properties;
-    private final StandardAnalyzer analyzer = new StandardAnalyzer();
+    private final CodeAnalyzer analyzer = new CodeAnalyzer();
 
     public LogSearchService(LogSearchProperties properties) {
         this.properties = properties;

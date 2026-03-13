@@ -17,7 +17,7 @@ log-search:
   #   server-\\d{8}\\.log     matches: server-20260312.log
   #   app-\\d{4}-\\d{2}-\\d{2}\\.log  matches: app-2026-03-12.log
   #   .*\\.log                 matches: any .log file
-  file-pattern: "server-\\d{8}\\.log"
+  file-pattern: ".*\\.log"
 
   # Date extraction from filename (regex with capture groups)
   # Groups: (year)(month)(day)
@@ -61,6 +61,11 @@ log-search:
 
   # Watch interval in seconds (how often to check for new files)
   watch-interval: 60
+
+  # Enable fallback parsing for non-matching log lines
+  # When enabled, lines that don't match the primary pattern will still be indexed
+  # using auto-detected timestamps or file metadata
+  enable-fallback: true
 
 logging:
   level:

@@ -30,7 +30,7 @@
 
 - **lucene-core**: Core indexing and search functionality
 - **lucene-queryparser**: Query parsing (supports boolean, phrase, wildcard queries)
-- **lucene-analyzers-common**: Text analysis (StandardAnalyzer for tokenization)
+- **lucene-analyzers-common**: Text analysis (CodeAnalyzer for code-aware tokenization)
 
 ### Spring Boot Starters
 
@@ -93,11 +93,29 @@
    - Single JAR deployment
    - Suitable for individual developer machines
 
-3. **Multi-field Search**
-   - Searches across both `message` and `user` fields
-   - Enables finding logs by user or content
+3. **Code-Aware Tokenization (CodeAnalyzer)**
+   - Custom Lucene analyzer optimized for Java code and stack traces
+   - Splits on dots, parentheses, colons to enable class name searches
+   - `com.example.DataValidator` → indexed as ["com", "example", "datavalidator"]
+   - Enables searching by class name, package, or method without full paths
 
-4. **External Configuration**
+4. **Multi-field Search**
+   - Searches across message, user, level, thread, and logger fields
+   - Enables finding logs by any metadata or content
+   - Field-specific queries: `level:ERROR`, `user:admin`, `logger:DataValidator`
+
+5. **Multi-line Log Support**
+   - Intelligent continuation line detection (stack traces, multi-line messages)
+   - Lines starting with whitespace or "at " are appended to previous entry
+   - Stack traces remain grouped with their originating log entry
+
+6. **Fallback Parsing**
+   - 3-tier parsing strategy ensures all logs get indexed
+   - Tier 1: Primary configured pattern
+   - Tier 2: Auto-detected timestamp patterns (ISO 8601, Apache, Syslog)
+   - Tier 3: File metadata (filename date or last modified time)
+
+7. **External Configuration**
    - Spring Boot's externalized configuration
    - Users can customize log patterns without rebuilding
 
@@ -235,8 +253,11 @@ private int watchInterval;           // 60 seconds
 **Fields**:
 ```java
 private ZonedDateTime timestamp;  // Parsed timestamp with timezone
-private String user;              // User from [user] field
-private String message;           // Log message content
+private String level;             // Log level (ERROR, WARN, INFO, DEBUG) - optional
+private String thread;            // Thread name - optional
+private String logger;            // Logger/class name - optional
+private String user;              // User from [user] field - optional
+private String message;           // Log message content (may include multi-line stack traces)
 private String sourceFile;        // Original log filename
 private long lineNumber;          // Line number in source file
 ```
@@ -279,52 +300,156 @@ private long searchTimeMs;        // Search execution time
 
 **Responsibilities**:
 - Parses raw log lines into `LogEntry` objects
+- Supports both 3-group (simple) and 6-group (enterprise) log formats
+- Handles multi-line log entries (stack traces, exception details)
+- 3-tier fallback parsing for non-matching lines
 - Handles timestamp parsing with timezone
-- Validates log format
 - Uses configurable regex pattern from application.yml
 
-**Configurable Regex Pattern**:
-The log format pattern is now fully configurable via `application.yml`:
-```java
-// Pattern is loaded from configuration at startup
-private final Pattern logPattern;
+**Supported Formats**:
 
-public LogParser(LogSearchProperties properties) {
-    this.properties = properties;
-    // Compile pattern from configuration
-    this.logPattern = Pattern.compile(properties.getLogLinePattern());
-    log.info("Initialized LogParser with pattern: {}", properties.getLogLinePattern());
-}
-```
-
-**Default Pattern** - Matches: `[timestamp] [user] message`:
+1. **3-Group Pattern** - `[timestamp] [user] message`:
 ```
 ^\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*(.*)$
 ```
 
-**Parsing Logic**:
+2. **6-Group Pattern** - `[timestamp] [thread] [level] [logger] [] [user:username] - message`:
+```
+^\\[([^\\]]+)\\]\\s+(.+?)\\s+\\[([^\\]]+)\\]\\s+\\[([^\\]]+)\\]\\s+\\[\\]\\s+\\[user:([^\\]]+)\\]\\s+-\\s+(.*)$
+```
+
+**Multi-line Support**:
 ```java
-public LogEntry parseLine(String line, String sourceFile, long lineNumber) {
-    Matcher matcher = LOG_PATTERN.matcher(line);
-    if (!matcher.matches()) return null;  // Skip malformed lines
+public boolean looksLikeContinuationLine(String line) {
+    // Heuristic 1: Starts with whitespace
+    if (Character.isWhitespace(line.charAt(0))) return true;
 
-    String timestampStr = matcher.group(1);   // [2026-03-12T14:30:45.123+13:00]
-    String user = matcher.group(2);           // [john.doe]
-    String message = matcher.group(3);        // Application started
+    // Heuristic 2: Common stack trace patterns
+    if (trimmed.startsWith("at ") ||
+        trimmed.startsWith("Caused by:") ||
+        trimmed.startsWith("Suppressed:")) {
+        return true;
+    }
 
-    // Parse timestamp using configured format
-    DateTimeFormatter formatter = DateTimeFormatter.ofPattern(
-        properties.getLogDatetimeFormat()
-    );
-    ZonedDateTime timestamp = ZonedDateTime.parse(timestampStr, formatter);
+    // Heuristic 3: No timestamp-like pattern at beginning
+    return !hasTimestampLikeStart;
+}
+```
 
-    return LogEntry.builder()...build();
+**3-Tier Fallback Parsing**:
+```java
+public LogEntry parseLine(String line, String sourceFile, long lineNumber, Path filePath) {
+    // Tier 1: Try primary configured pattern
+    LogEntry entry = tryPrimaryPattern(line, sourceFile, lineNumber);
+    if (entry != null) return entry;
+
+    // If fallback disabled, stop here
+    if (!properties.isEnableFallback()) return null;
+
+    // Tier 2: Auto-detect timestamp in line
+    // Tries: ISO 8601, Apache/NCSA, Syslog, etc.
+    entry = tryTimestampExtraction(line, sourceFile, lineNumber);
+    if (entry != null) return entry;
+
+    // Tier 3: Use file metadata (filename date or file modified time)
+    return createFallbackEntry(line, sourceFile, lineNumber, filePath);
+}
+```
+
+**Parsing Logic** (3-group example):
+```java
+Matcher matcher = logPattern.matcher(line);
+if (!matcher.matches()) return null;
+
+String timestampStr = matcher.group(1);   // [2026-03-12T14:30:45.123+13:00]
+String user = matcher.group(2);           // [john.doe]
+String message = matcher.group(3);        // Application started
+
+DateTimeFormatter formatter = DateTimeFormatter.ofPattern(properties.getLogDatetimeFormat());
+ZonedDateTime timestamp = ZonedDateTime.parse(timestampStr, formatter);
+
+return LogEntry.builder()
+    .timestamp(timestamp)
+    .user(user)
+    .message(message)
+    .sourceFile(sourceFile)
+    .lineNumber(lineNumber)
+    .build();
+```
+
+**Parsing Logic** (6-group example):
+```java
+if (groupCount >= 6) {
+    builder.timestamp(parsedTimestamp)
+           .thread(matcher.group(2))      // [[ACTIVE] ExecuteThread: '5']
+           .level(matcher.group(3))       // ERROR
+           .logger(matcher.group(4))      // com.example.Handler
+           .user(matcher.group(5))        // admin
+           .message(matcher.group(6))     // Error message
+           .sourceFile(sourceFile)
+           .lineNumber(lineNumber);
 }
 ```
 
 ---
 
-### 8. LuceneIndexService.java
+### 8. CodeAnalyzer.java
+**Package**: `com.lsearch.logsearch.service`
+**Type**: Lucene Analyzer (extends `org.apache.lucene.analysis.Analyzer`)
+
+**Responsibilities**:
+- Custom tokenization optimized for Java code and stack traces
+- Splits text on code-specific delimiters (dots, parentheses, colons, etc.)
+- Enables searching for Java class names without full package paths
+- Applies lowercase filtering and stop word removal
+
+**Problem Solved**:
+StandardAnalyzer treats dotted names like `com.example.DataValidator` as single tokens or email addresses, making individual components unsearchable. CodeAnalyzer splits them properly.
+
+**Tokenization Pattern**:
+```java
+// Splits on: . ( ) : @ $ [ ] < > ; , / \ and whitespace
+private static final Pattern TOKEN_PATTERN =
+    Pattern.compile("[\\s.():@$\\[\\]<>;,/\\\\]+");
+```
+
+**Examples**:
+
+| Input | StandardAnalyzer Tokens | CodeAnalyzer Tokens |
+|-------|------------------------|---------------------|
+| `com.example.DataValidator` | `com.example.datavalidator` | `com`, `example`, `datavalidator` |
+| `validateLevel78(DataValidator.java:1232)` | `validatelevel78`, `datavalidator.java`, `1232` | `validatelevel78`, `datavalidator`, `java`, `1232` |
+| `OutOfMemoryError` | `outofmemoryerror` | `outofmemoryerror` |
+| `org.springframework.web.servlet` | `org.springframework.web.servlet` | `org`, `springframework`, `web`, `servlet` |
+
+**Token Stream Pipeline**:
+```java
+@Override
+protected TokenStreamComponents createComponents(String fieldName) {
+    // 1. Tokenize using pattern splitter
+    Tokenizer tokenizer = new PatternTokenizer(TOKEN_PATTERN, -1);
+
+    // 2. Convert to lowercase
+    TokenStream tokenStream = new LowerCaseFilter(tokenizer);
+
+    // 3. Remove English stop words (the, a, at, is, etc.)
+    tokenStream = new StopFilter(tokenStream, EnglishAnalyzer.ENGLISH_STOP_WORDS_SET);
+
+    return new TokenStreamComponents(tokenizer, tokenStream);
+}
+```
+
+**Impact on Search**:
+- **Before** (StandardAnalyzer): `DataValidator` → 0 results
+- **After** (CodeAnalyzer): `DataValidator` → finds all occurrences in any package
+
+**Used By**:
+- `LuceneIndexService` - during indexing
+- `LogSearchService` - during search query parsing
+
+---
+
+### 9. LuceneIndexService.java
 **Package**: `com.lsearch.logsearch.service`
 **Type**: Service
 
@@ -414,7 +539,7 @@ public void shutdown() {
 
 ---
 
-### 9. LogFileIndexer.java
+### 10. LogFileIndexer.java
 **Package**: `com.lsearch.logsearch.service`
 **Type**: Service
 
@@ -502,7 +627,7 @@ private void indexFile(Path filePath) {
 
 ---
 
-### 10. LogSearchService.java
+### 11. LogSearchService.java
 **Package**: `com.lsearch.logsearch.service`
 **Type**: Service
 

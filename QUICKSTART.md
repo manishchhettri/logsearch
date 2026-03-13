@@ -41,11 +41,24 @@ Your browser will automatically open to http://localhost:8080
 
 1. Click "Last 24 Hours" to set the date range
 2. Try these searches:
+
+**Basic searches:**
    - Leave search empty and click "Search" to see all logs
-   - Search for: `error`
-   - Search for: `john.doe`
-   - Search for: `backup AND completed`
-   - Search for: `"database connection"`
+   - `error` - find all errors
+   - `level:ERROR` - find ERROR level logs only
+   - `user:admin` - find logs from admin user
+
+**Java code searches:**
+   - `DataValidator` - find logs mentioning this class
+   - `OutOfMemoryError` - find memory errors
+   - `NullPointerException` - find NPE stack traces
+   - `springframework` - find Spring framework logs
+
+**Advanced searches:**
+   - `error AND database` - both terms must be present
+   - `"database connection"` - exact phrase search
+   - `level:ERROR AND user:admin` - errors from specific user
+   - `OutOfMemory* OR StackOverflow*` - memory or stack issues
 
 ### 4. Use your own logs
 
@@ -66,10 +79,51 @@ Your logs should look like:
 
 Pattern: `[ISO DateTime] [User] Message`
 
+## Search Tips & Tricks
+
+**Finding errors:**
+```
+level:ERROR                    → All error-level logs
+NullPointerException          → All NPEs in stack traces
+OutOfMemoryError              → Memory issues
+```
+
+**Finding specific Java code:**
+```
+DataValidator                 → Logs mentioning this class (from any package)
+springframework                → All Spring framework logs
+TransactionManager            → Transaction-related logs
+```
+
+**User activity:**
+```
+user:john.doe                 → All logs from this user
+user:admin AND level:ERROR    → Admin's errors
+```
+
+**Boolean combinations:**
+```
+database AND connection       → Both terms present
+error OR warning              → Either term present
+error NOT timeout             → Errors excluding timeouts
+```
+
+**Wildcards:**
+```
+connect*                      → connection, connecting, connects, etc.
+*Exception                    → Any exception type
+```
+
+**Exact phrases:**
+```
+"out of memory"               → Exact phrase match
+"stack overflow error"        → Exact phrase in that order
+```
+
 ## Next Steps
 
-- See [README.md](README.md) for full documentation
-- Customize log format in `src/main/resources/application.yml`
+- See [README.md](README.md) for comprehensive search guide with 40+ examples
+- Customize log format in `config/application.yml` (no rebuild needed!)
 - Add more log files to the logs directory (they'll be auto-indexed)
 
 ## Common Commands
@@ -110,8 +164,15 @@ java -version
 
 **No results when searching?**
 - Make sure date range includes your log file dates
-- Check log files match the pattern: `server-YYYYMMDD.log`
+- Try simpler search terms (e.g., `error` instead of `"connection error"`)
+- Check logs are indexed: Click "Re-Index Logs" button in UI
+- File pattern `.*\.log` matches ANY .log file (very flexible)
 - Look at console output for indexing errors
+
+**Can't find Java class names?**
+- ✓ Search works! The CodeAnalyzer splits `com.example.DataValidator` automatically
+- ✓ Search just: `DataValidator` (not the full package path)
+- ✓ Or search: `example`, `validation`, or any component
 
 ## Need Help?
 

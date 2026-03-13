@@ -4,7 +4,6 @@ import com.lsearch.logsearch.config.LogSearchProperties;
 import com.lsearch.logsearch.model.LogEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -29,7 +28,7 @@ public class LuceneIndexService {
 
     private final LogSearchProperties properties;
     private final Map<String, IndexWriter> indexWriters = new ConcurrentHashMap<>();
-    private final StandardAnalyzer analyzer = new StandardAnalyzer();
+    private final CodeAnalyzer analyzer = new CodeAnalyzer();
 
     public LuceneIndexService(LogSearchProperties properties) {
         this.properties = properties;

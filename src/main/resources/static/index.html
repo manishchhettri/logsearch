@@ -128,36 +128,78 @@
 
         .log-entry {
             border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 15px;
-            margin-bottom: 10px;
-            background: #fafafa;
-            font-family: 'Monaco', 'Menlo', monospace;
-            font-size: 13px;
+            border-radius: 6px;
+            padding: 0;
+            margin-bottom: 15px;
+            background: white;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
 
         .log-entry-header {
             display: flex;
-            gap: 20px;
-            margin-bottom: 8px;
-            color: #666;
+            flex-wrap: wrap;
+            gap: 15px;
+            padding: 12px 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
             font-size: 12px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            align-items: center;
         }
 
         .log-entry-header span {
             display: flex;
             align-items: center;
             gap: 5px;
+            color: #666;
+            white-space: nowrap;
         }
 
         .log-entry-header strong {
             color: #333;
+            font-weight: 600;
+        }
+
+        .log-level {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .log-level.ERROR {
+            background: #fee;
+            color: #c00;
+        }
+
+        .log-level.WARN {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .log-level.INFO {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .log-level.DEBUG {
+            background: #e7e7e7;
+            color: #666;
         }
 
         .log-entry-message {
             color: #333;
-            line-height: 1.6;
-            word-break: break-all;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;
+            font-size: 12px;
+            padding: 15px;
+            background: #fafafa;
+            overflow-x: auto;
         }
 
         .pagination {
@@ -333,10 +375,28 @@
 
                 const timestamp = new Date(entry.timestamp).toLocaleString();
 
+                const levelBadge = entry.level
+                    ? `<span class="log-level ${entry.level}">${entry.level}</span>`
+                    : '';
+
+                const threadInfo = entry.thread
+                    ? `<span><strong>Thread:</strong> ${escapeHtml(entry.thread)}</span>`
+                    : '';
+
+                const loggerInfo = entry.logger
+                    ? `<span><strong>Logger:</strong> ${escapeHtml(entry.logger)}</span>`
+                    : '';
+
+                const userInfo = entry.user
+                    ? `<span><strong>User:</strong> ${escapeHtml(entry.user)}</span>`
+                    : '';
+
                 entryDiv.innerHTML = `
                     <div class="log-entry-header">
                         <span><strong>Time:</strong> ${timestamp}</span>
-                        <span><strong>User:</strong> ${entry.user}</span>
+                        ${levelBadge}
+                        ${userInfo}
+                        ${loggerInfo}
                         <span><strong>File:</strong> ${entry.sourceFile}:${entry.lineNumber}</span>
                     </div>
                     <div class="log-entry-message">${escapeHtml(entry.message)}</div>

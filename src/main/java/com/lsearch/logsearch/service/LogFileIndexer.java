@@ -122,10 +122,37 @@ public class LogFileIndexer {
             while ((line = reader.readLine()) != null) {
                 lineNumber.incrementAndGet();
 
-                LogEntry parsedEntry = logParser.parseLine(line, filename, lineNumber.get());
+                // Smart multi-line detection: check primary pattern first
+                boolean isNewEntry = logParser.matchesPrimaryPattern(line);
+                boolean isContinuation = logParser.looksLikeContinuationLine(line);
 
+                LogEntry parsedEntry = null;
+
+                if (isNewEntry) {
+                    // This line matches the primary pattern - it's definitely a new entry
+                    parsedEntry = logParser.parseLine(line, filename, lineNumber.get(), logFile);
+                } else if (isContinuation && currentEntry != null) {
+                    // This looks like a continuation line and we have a current entry
+                    // Append to current entry instead of parsing
+                    if (continuationLines.length() > 0) {
+                        continuationLines.append("\n");
+                    }
+                    continuationLines.append(line);
+                    // Continue to next line without creating new entry
+                    continue;
+                } else if (properties.isEnableFallback()) {
+                    // Not a primary pattern, not a continuation (or no current entry)
+                    // Try fallback parsing for truly standalone lines
+                    parsedEntry = logParser.parseLine(line, filename, lineNumber.get(), logFile);
+                } else {
+                    // No match, no fallback - skip this line
+                    skippedLines.incrementAndGet();
+                    continue;
+                }
+
+                // If we have a parsed entry, it's a new log entry
                 if (parsedEntry != null) {
-                    // This is a new log entry - index the previous one if it exists
+                    // Index the previous entry first (if it exists)
                     if (currentEntry != null) {
                         try {
                             // Append any continuation lines to the message
@@ -144,18 +171,6 @@ public class LogFileIndexer {
 
                     // Start tracking this new entry
                     currentEntry = parsedEntry;
-
-                } else {
-                    // This is a continuation line - append to current entry
-                    if (currentEntry != null) {
-                        if (continuationLines.length() > 0) {
-                            continuationLines.append("\n");
-                        }
-                        continuationLines.append(line);
-                    } else {
-                        // No current entry to attach to, skip this line
-                        skippedLines.incrementAndGet();
-                    }
                 }
 
                 // Commit every 10000 lines to avoid memory issues
