@@ -83,6 +83,191 @@ log-search:
   # using auto-detected timestamps or file metadata
   enable-fallback: true
 
+  # Hierarchical environment-based configuration
+  # Organize by environment first, then systems within each environment
+  environments:
+    # Development Environment 1
+    d1:
+      display-name: "Development 1"
+      enabled: true
+      systems:
+        # CMS - Multi-server example (4 servers)
+        - name: cms
+          display-name: "CMS"
+          target-path: ./logs/d1/cms
+          file-pattern: "server-\\d{8}\\.log"
+          requires-auth: false
+          retention-days: 7
+          service-type: APPLICATION
+          servers:
+            - name: "Server 1"
+              url: "http://d1-cms1.server.com/logs/"
+              enabled: true
+            - name: "Server 2"
+              url: "http://d1-cms2.server.com/logs/"
+              enabled: true
+            - name: "Server 3"
+              url: "http://d1-cms3.server.com/logs/"
+              enabled: true
+            - name: "Server 4"
+              url: "http://d1-cms4.server.com/logs/"
+              enabled: true
+
+        # Payment Service - Multi-server example (3 servers)
+        - name: payment
+          display-name: "Payment Service"
+          target-path: ./logs/d1/payment
+          file-pattern: "server-\\d{8}\\.log"
+          requires-auth: false
+          retention-days: 7
+          service-type: APPLICATION
+          servers:
+            - name: "Node 1"
+              url: "http://d1-payment1.server.com/logs/"
+            - name: "Node 2"
+              url: "http://d1-payment2.server.com/logs/"
+            - name: "Node 3"
+              url: "http://d1-payment3.server.com/logs/"
+
+        # OBMan - Single server (backward compatible)
+        - name: obman
+          display-name: "OBMan"
+          url: "http://d1.server.com/logs/obman/"
+          target-path: ./logs/d1/obman
+          file-pattern: ".*\\.log"
+          requires-auth: false
+          retention-days: 7
+          service-type: APPLICATION
+
+    # Development Environment 2
+    d2:
+      display-name: "Development 2"
+      enabled: true
+      systems:
+        # CMS - Single server
+        - name: cms
+          display-name: "CMS"
+          url: "http://d2.server.com/logs/cms/"
+          target-path: ./logs/d2/cms
+          file-pattern: "server-\\d{8}\\.log"
+          requires-auth: false
+          retention-days: 7
+          service-type: APPLICATION
+
+        # Payment Service - 2 servers
+        - name: payment
+          display-name: "Payment Service"
+          target-path: ./logs/d2/payment
+          file-pattern: "server-\\d{8}\\.log"
+          requires-auth: false
+          retention-days: 7
+          service-type: APPLICATION
+          servers:
+            - name: "Primary"
+              url: "http://d2-payment1.server.com/logs/"
+            - name: "Secondary"
+              url: "http://d2-payment2.server.com/logs/"
+
+        # OBMan - Single server
+        - name: obman
+          display-name: "OBMan"
+          url: "http://d2.server.com/logs/obman/"
+          target-path: ./logs/d2/obman
+          file-pattern: ".*\\.log"
+          requires-auth: false
+          retention-days: 7
+          service-type: APPLICATION
+
+        # IIB - Single server
+        - name: iib
+          display-name: "IBM Integration Bus"
+          url: "http://d2.server.com/logs/iib/"
+          target-path: ./logs/d2/iib
+          file-pattern: ".*\\.log"
+          requires-auth: false
+          retention-days: 7
+          service-type: INTEGRATION
+
+    # UAT Environment 1
+    uat1:
+      display-name: "UAT 1"
+      enabled: true
+      systems:
+        - name: cms
+          display-name: "CMS"
+          url: "http://uat1.server.com/logs/cms/"
+          target-path: ./logs/uat1/cms
+          file-pattern: "server-\\d{8}\\.log"
+          requires-auth: true
+          default-username: "viewer"
+          retention-days: 30
+          service-type: APPLICATION
+
+        - name: payment
+          display-name: "Payment Service"
+          url: "http://uat1.server.com/logs/payment/"
+          target-path: ./logs/uat1/payment
+          file-pattern: "server-\\d{8}\\.log"
+          requires-auth: true
+          default-username: "viewer"
+          retention-days: 30
+          service-type: APPLICATION
+
+        - name: obman
+          display-name: "OBMan"
+          url: "http://uat1.server.com/logs/obman/"
+          target-path: ./logs/uat1/obman
+          file-pattern: ".*\\.log"
+          requires-auth: true
+          default-username: "viewer"
+          retention-days: 30
+          service-type: APPLICATION
+
+        - name: iib
+          display-name: "IBM Integration Bus"
+          url: "http://uat1.server.com/logs/iib/"
+          target-path: ./logs/uat1/iib
+          file-pattern: ".*\\.log"
+          requires-auth: true
+          default-username: "viewer"
+          retention-days: 30
+          service-type: INTEGRATION
+
+    # Production Environment 1 (disabled by default for safety)
+    prod1:
+      display-name: "Production 1"
+      enabled: false
+      systems:
+        - name: cms
+          display-name: "CMS"
+          url: "http://prod1.server.com/logs/cms/"
+          target-path: ./logs/prod1/cms
+          file-pattern: "server-\\d{8}\\.log"
+          requires-auth: true
+          default-username: "readonly"
+          retention-days: 90
+          service-type: APPLICATION
+
+        - name: payment
+          display-name: "Payment Service"
+          url: "http://prod1.server.com/logs/payment/"
+          target-path: ./logs/prod1/payment
+          file-pattern: "server-\\d{8}\\.log"
+          requires-auth: true
+          default-username: "readonly"
+          retention-days: 90
+          service-type: APPLICATION
+
+        - name: iib
+          display-name: "IBM Integration Bus"
+          url: "http://prod1.server.com/logs/iib/"
+          target-path: ./logs/prod1/iib
+          file-pattern: ".*\\.log"
+          requires-auth: true
+          default-username: "readonly"
+          retention-days: 90
+          service-type: INTEGRATION
+
 logging:
   level:
     com.lsearch.logsearch: INFO

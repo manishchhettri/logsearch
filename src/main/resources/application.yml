@@ -40,6 +40,25 @@ log-search:
   # Recommended: 3600 (check every hour) or disable auto-watch entirely
   watch-interval: 60
 
+  # Default log download locations
+  # Configure common log server URLs for quick access
+  download-locations:
+    - name: "Dev Server 1"
+      url: "http://dev1.example.com/logs/"
+      description: "Development environment 1 logs"
+      enabled: true
+
+    - name: "UAT Server"
+      url: "http://uat.example.com/logs/"
+      description: "UAT environment logs"
+      enabled: true
+
+    - name: "Production Server"
+      url: "http://prod.example.com/logs/"
+      description: "Production logs (read-only access)"
+      enabled: false
+      requires-auth: true
+
 logging:
   level:
     # Application logging level: ERROR, WARN, INFO, DEBUG, TRACE

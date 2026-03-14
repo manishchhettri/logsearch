@@ -21,7 +21,7 @@ These documents outline enhancements designed for **enterprise-scale deployment*
 - Predictable performance with adaptive chunking
 - 90-98% pruning efficiency with Bloom filters
 
-**Implementation Effort:** 6-8 weeks (includes Bloom filters + adaptive chunking)
+**Implementation Effort:** 8-9 weeks (includes Bloom filters + adaptive chunking + integration platform support)
 
 **When to implement:**
 - Deploying as shared team service
@@ -66,9 +66,56 @@ Add JWT-based authentication with JSON file storage for user credentials and per
 
 ---
 
+### 3. Multi-Index Architecture (Splunk-Style Index Management)
+**File:** `multi-index-architecture.md`
+
+**Purpose:** Enable Splunk-style index management with multiple log sources
+
+**Key Benefits:**
+- Configure multiple log directories (indexes) in YAML
+- Each index has unique name, path, retention policy
+- Index selector in UI (like Splunk)
+- Search specific indexes or all indexes
+- Independent management per index
+- Multi-tenant support
+
+**Implementation Effort:** 3-4 weeks
+
+**When to implement:**
+- Multiple applications/services with separate log directories
+- Need Splunk-style `index:payment` query syntax
+- Different retention policies per log source
+- Multi-tenant deployments
+- Logs cannot be moved to single directory
+
+**Core Concept:**
+Configure multiple named indexes pointing to different log directories. Each index appears in UI dropdown for filtering. Enables Splunk-style search: `index:payment error` or `index:(payment OR order) timeout`.
+
+**Example Configuration:**
+```yaml
+log-search:
+  indexes:
+    - name: payment
+      display-name: "Payment Service"
+      path: /var/log/payment-service
+      retention-days: 90
+
+    - name: order
+      display-name: "Order Service"
+      path: /var/log/order-service
+      retention-days: 90
+
+    - name: iib
+      display-name: "Integration Bus"
+      path: /opt/ibm/iib/logs
+      retention-days: 30
+```
+
+---
+
 ## Design Principles
 
-Both enhancements follow LogSearch's core design principles:
+All enhancements follow LogSearch's core design principles:
 
 1. **Zero External Dependencies**
    - No database servers (PostgreSQL, MySQL, etc.)

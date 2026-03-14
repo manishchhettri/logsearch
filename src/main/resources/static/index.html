@@ -582,6 +582,58 @@
             margin-bottom: 5px;
         }
 
+        .environment-group {
+            margin-bottom: 15px;
+        }
+
+        .environment-header {
+            font-weight: 600;
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: #e8e8e8;
+            border-radius: 4px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .environment-header:hover {
+            background: #ddd;
+        }
+
+        .systems-list {
+            padding-left: 25px;
+            margin-top: 5px;
+        }
+
+        .system-checkbox {
+            display: flex;
+            align-items: center;
+            padding: 5px 0;
+        }
+
+        .system-checkbox input[type="checkbox"] {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .system-checkbox label {
+            cursor: pointer;
+            margin: 0;
+            font-weight: normal;
+            color: #555;
+        }
+
+        .system-auth-badge {
+            margin-left: 8px;
+            padding: 2px 6px;
+            font-size: 11px;
+            background: #ffeaa7;
+            border-radius: 3px;
+            color: #333;
+        }
+
         .export-buttons {
             display: flex;
             gap: 10px;
@@ -1232,12 +1284,24 @@
                 <div class="download-form">
                     <h2 style="margin-bottom: 20px; font-size: 18px;">Download & Extract Log Files</h2>
                     <p style="margin-bottom: 20px; color: #666; font-size: 14px;">
-                        Enter up to 5 URLs (files or directories). The system will auto-detect and download:
+                        Select a predefined location or enter custom URLs. The system will auto-detect and download:
                         <br><strong>• File URLs:</strong> Downloads the specific file
                         <br><strong>• Directory URLs:</strong> Discovers and downloads all log files (.log, .gz, .zip, and extensionless text files)
                         <br><strong>• Smart filtering:</strong> Skips binary files and 0-byte files, detects text files automatically
                         <br>Compressed files (.gz, .zip) are automatically extracted.
                     </p>
+
+                    <!-- Predefined Download Locations - Hierarchical -->
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #555;">Select Systems to Download (optional):</label>
+                        <div id="environmentSystemsTree" style="border: 1px solid #ddd; border-radius: 4px; padding: 15px; background: #f9f9f9; max-height: 400px; overflow-y: auto;">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <button type="button" onclick="selectAllSystems()" style="padding: 5px 10px; font-size: 12px; margin-right: 10px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; cursor: pointer;">Select All</button>
+                            <button type="button" onclick="clearAllSystems()" style="padding: 5px 10px; font-size: 12px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; cursor: pointer;">Clear All</button>
+                        </div>
+                    </div>
 
                     <div class="download-urls">
                         <div class="form-row">
@@ -2043,8 +2107,197 @@
             }
         }
 
+        // Load download locations from API
+        let downloadLocations = [];
+        let environmentsMap = {};
+
+        async function loadDownloadLocations() {
+            try {
+                const response = await fetch('/api/download-locations');
+                downloadLocations = await response.json();
+
+                // Group locations by environment
+                environmentsMap = {};
+                downloadLocations.forEach(location => {
+                    const env = location.environment;
+                    if (!environmentsMap[env]) {
+                        environmentsMap[env] = {
+                            name: env,
+                            displayName: env.toUpperCase(),
+                            systems: []
+                        };
+                    }
+                    environmentsMap[env].systems.push(location);
+                });
+
+                // Build hierarchical tree
+                renderEnvironmentSystemsTree();
+            } catch (error) {
+                console.error('Failed to load download locations:', error);
+            }
+        }
+
+        function renderEnvironmentSystemsTree() {
+            const container = document.getElementById('environmentSystemsTree');
+            container.innerHTML = '';
+
+            // Group locations by environment and system
+            const envSystemsMap = {};
+            downloadLocations.forEach(location => {
+                const env = location.environment;
+                const systemName = location.indexName.replace(`-${env}`, ''); // Extract system name
+
+                if (!envSystemsMap[env]) {
+                    envSystemsMap[env] = {};
+                }
+                if (!envSystemsMap[env][systemName]) {
+                    envSystemsMap[env][systemName] = {
+                        name: location.name.split(' - ')[0], // Remove server suffix
+                        urls: [],
+                        requiresAuth: location.requiresAuth,
+                        locations: []
+                    };
+                }
+                envSystemsMap[env][systemName].urls.push(location.url);
+                envSystemsMap[env][systemName].locations.push(location);
+            });
+
+            // Sort environments
+            const envKeys = Object.keys(envSystemsMap).sort();
+
+            envKeys.forEach(envKey => {
+                const systems = envSystemsMap[envKey];
+                const systemKeys = Object.keys(systems);
+                const totalServers = systemKeys.reduce((sum, key) => sum + systems[key].urls.length, 0);
+
+                // Environment group
+                const envGroup = document.createElement('div');
+                envGroup.className = 'environment-group';
+
+                // Environment header
+                const envHeader = document.createElement('div');
+                envHeader.className = 'environment-header';
+                envHeader.textContent = `${envKey.toUpperCase()} (${systemKeys.length} systems, ${totalServers} servers)`;
+                envHeader.onclick = () => toggleEnvironment(envKey);
+                envGroup.appendChild(envHeader);
+
+                // Systems list
+                const systemsList = document.createElement('div');
+                systemsList.className = 'systems-list';
+                systemsList.id = `systems-${envKey}`;
+
+                systemKeys.forEach((systemKey, idx) => {
+                    const system = systems[systemKey];
+
+                    // System container
+                    const systemDiv = document.createElement('div');
+                    systemDiv.style.marginBottom = '10px';
+
+                    // Checkbox and label row
+                    const checkboxDiv = document.createElement('div');
+                    checkboxDiv.className = 'system-checkbox';
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `system-${envKey}-${idx}`;
+                    checkbox.value = JSON.stringify(system.locations);
+                    checkbox.onchange = onSystemSelectionChange;
+
+                    const label = document.createElement('label');
+                    label.htmlFor = `system-${envKey}-${idx}`;
+                    label.textContent = `${system.name} (${system.urls.length} ${system.urls.length === 1 ? 'server' : 'servers'})`;
+
+                    if (system.requiresAuth) {
+                        const authBadge = document.createElement('span');
+                        authBadge.className = 'system-auth-badge';
+                        authBadge.textContent = 'requires auth';
+                        label.appendChild(authBadge);
+                    }
+
+                    checkboxDiv.appendChild(checkbox);
+                    checkboxDiv.appendChild(label);
+                    systemDiv.appendChild(checkboxDiv);
+
+                    // URLs list (indented)
+                    const urlsList = document.createElement('div');
+                    urlsList.style.paddingLeft = '40px';
+                    urlsList.style.fontSize = '12px';
+                    urlsList.style.color = '#666';
+                    urlsList.style.marginTop = '3px';
+
+                    system.urls.forEach(url => {
+                        const urlDiv = document.createElement('div');
+                        urlDiv.textContent = `• ${url}`;
+                        urlsList.appendChild(urlDiv);
+                    });
+
+                    systemDiv.appendChild(urlsList);
+                    systemsList.appendChild(systemDiv);
+                });
+
+                envGroup.appendChild(systemsList);
+                container.appendChild(envGroup);
+            });
+        }
+
+        function toggleEnvironment(envKey) {
+            const systemsList = document.getElementById(`systems-${envKey}`);
+            if (systemsList.style.display === 'none') {
+                systemsList.style.display = 'block';
+            } else {
+                systemsList.style.display = 'none';
+            }
+        }
+
+        function onSystemSelectionChange() {
+            const selected = getSelectedSystems();
+
+            // Auto-fill username if all selected systems have the same default username
+            if (selected.length > 0) {
+                const firstUsername = selected[0].defaultUsername;
+                if (firstUsername && selected.every(s => s.defaultUsername === firstUsername)) {
+                    document.getElementById('username').value = firstUsername;
+                }
+            }
+        }
+
+        function getSelectedSystems() {
+            const checkboxes = document.querySelectorAll('#environmentSystemsTree input[type="checkbox"]:checked');
+            const allLocations = [];
+
+            checkboxes.forEach(cb => {
+                const locations = JSON.parse(cb.value);
+                // Each checkbox value is an array of locations
+                if (Array.isArray(locations)) {
+                    allLocations.push(...locations);
+                }
+            });
+
+            return allLocations;
+        }
+
+        function selectAllSystems() {
+            document.querySelectorAll('#environmentSystemsTree input[type="checkbox"]').forEach(cb => {
+                cb.checked = true;
+            });
+            onSystemSelectionChange();
+        }
+
+        function clearAllSystems() {
+            document.querySelectorAll('#environmentSystemsTree input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
+            });
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+        }
+
         async function downloadLogs() {
-            const urls = [
+            // Get URLs from selected systems
+            const selectedSystems = getSelectedSystems();
+            let urls = selectedSystems.map(s => s.url);
+
+            // Also include manual URL entries
+            const manualUrls = [
                 document.getElementById('url1').value,
                 document.getElementById('url2').value,
                 document.getElementById('url3').value,
@@ -2052,16 +2305,27 @@
                 document.getElementById('url5').value
             ].filter(url => url && url.trim() !== '');
 
+            // Combine both
+            urls = [...urls, ...manualUrls];
+
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
             if (urls.length === 0) {
-                showDownloadStatus('Please enter at least one URL', 'error');
+                showDownloadStatus('Please select systems or enter at least one URL', 'error');
                 return;
             }
 
-            if (!username || !password) {
-                showDownloadStatus('Please enter username and password', 'error');
+            // Check if any selected system requires auth
+            const requiresAuth = selectedSystems.some(s => s.requiresAuth);
+            if (requiresAuth && (!username || !password)) {
+                showDownloadStatus('Selected systems require authentication. Please enter username and password.', 'error');
+                return;
+            }
+
+            // Only validate auth if username or password is provided
+            if ((username && !password) || (!username && password)) {
+                showDownloadStatus('Please enter both username and password, or leave both empty', 'error');
                 return;
             }
 
@@ -2420,6 +2684,8 @@
         setLast24Hours();
         // Load saved searches on page load
         renderSavedSearches();
+        // Load download locations on page load
+        loadDownloadLocations();
 
         // Dashboard Management
         function loadDashboards() {

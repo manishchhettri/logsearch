@@ -29,21 +29,36 @@ public class LogDownloadService {
 
     private static final Logger log = LoggerFactory.getLogger(LogDownloadService.class);
 
-    @Value("${log-search.logs-dir}")
+    @Value("${log-search.logs-dir:./logs}")
     private String logsDirectory;
 
+    /**
+     * Download logs with default logs directory
+     */
     public DownloadResult downloadLogs(List<String> urls, String username, String password) {
+        return downloadLogs(urls, username, password, logsDirectory);
+    }
+
+    /**
+     * Download logs to a specific target path
+     */
+    public DownloadResult downloadLogs(List<String> urls, String username, String password, String targetPath) {
         DownloadResult result = new DownloadResult();
 
-        // Ensure logs directory exists
-        Path logsPath = Paths.get(logsDirectory);
+        // Use target path if provided, otherwise use default logs directory
+        String downloadPath = (targetPath != null && !targetPath.trim().isEmpty()) ? targetPath : logsDirectory;
+
+        // Ensure target directory exists
+        Path logsPath = Paths.get(downloadPath);
         try {
             Files.createDirectories(logsPath);
         } catch (IOException e) {
-            log.error("Failed to create logs directory: {}", logsDirectory, e);
-            result.addError("Failed to create logs directory: " + e.getMessage());
+            log.error("Failed to create target directory: {}", downloadPath, e);
+            result.addError("Failed to create target directory: " + e.getMessage());
             return result;
         }
+
+        log.info("Downloading to directory: {}", logsPath.toAbsolutePath());
 
         // Download each URL
         for (String urlString : urls) {

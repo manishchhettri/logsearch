@@ -1,7 +1,14 @@
 package com.lsearch.logsearch.config;
 
+import com.lsearch.logsearch.model.DownloadLocation;
+import com.lsearch.logsearch.model.EnvironmentConfig;
+import com.lsearch.logsearch.model.IndexConfig;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 @Component
 @ConfigurationProperties(prefix = "log-search")
@@ -18,6 +25,9 @@ public class LogSearchProperties {
     private boolean autoWatch;
     private int watchInterval;
     private boolean enableFallback = true;
+
+    // Hierarchical environment-based configuration
+    private Map<String, EnvironmentConfig> environments;
 
     public String getLogsDir() {
         return logsDir;
@@ -105,5 +115,61 @@ public class LogSearchProperties {
 
     public void setEnableFallback(boolean enableFallback) {
         this.enableFallback = enableFallback;
+    }
+
+    public Map<String, EnvironmentConfig> getEnvironments() {
+        return environments;
+    }
+
+    public void setEnvironments(Map<String, EnvironmentConfig> environments) {
+        this.environments = environments;
+    }
+
+    /**
+     * Convert hierarchical environment structure to flat list of download locations.
+     * This maintains compatibility with existing code.
+     */
+    public List<DownloadLocation> getDownloadLocations() {
+        List<DownloadLocation> locations = new ArrayList<>();
+
+        if (environments == null || environments.isEmpty()) {
+            return locations;
+        }
+
+        // Convert each environment's systems to download locations
+        for (Map.Entry<String, EnvironmentConfig> entry : environments.entrySet()) {
+            String envKey = entry.getKey();
+            EnvironmentConfig envConfig = entry.getValue();
+
+            // Set environment name if not already set
+            if (envConfig.getName() == null) {
+                envConfig.setName(envKey);
+            }
+
+            locations.addAll(envConfig.toDownloadLocations());
+        }
+
+        return locations;
+    }
+
+    /**
+     * Generate IndexConfig list from download locations.
+     * Only includes locations that have targetPath configured.
+     */
+    public List<IndexConfig> getIndexes() {
+        List<DownloadLocation> downloadLocations = getDownloadLocations();
+
+        if (downloadLocations.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<IndexConfig> indexes = new ArrayList<>();
+        for (DownloadLocation location : downloadLocations) {
+            // Only create index if targetPath is configured
+            if (location.getTargetPath() != null && !location.getTargetPath().trim().isEmpty()) {
+                indexes.add(location.toIndexConfig());
+            }
+        }
+        return indexes;
     }
 }

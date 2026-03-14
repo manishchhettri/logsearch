@@ -1,6 +1,7 @@
 package com.lsearch.logsearch.service;
 
 import com.lsearch.logsearch.config.LogSearchProperties;
+import com.lsearch.logsearch.model.IndexConfig;
 import com.lsearch.logsearch.model.LogEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,14 +29,20 @@ public class LogFileIndexer {
     private final LogSearchProperties properties;
     private final LogParser logParser;
     private final LuceneIndexService indexService;
+    private final IndexConfigService indexConfigService;
+    private final IntegrationMetadataExtractor integrationExtractor;
 
     // Thread-safe set for parallel indexing
     private final Set<String> indexedFiles = ConcurrentHashMap.newKeySet();
 
-    public LogFileIndexer(LogSearchProperties properties, LogParser logParser, LuceneIndexService indexService) {
+    public LogFileIndexer(LogSearchProperties properties, LogParser logParser,
+                          LuceneIndexService indexService, IndexConfigService indexConfigService,
+                          IntegrationMetadataExtractor integrationExtractor) {
         this.properties = properties;
         this.logParser = logParser;
         this.indexService = indexService;
+        this.indexConfigService = indexConfigService;
+        this.integrationExtractor = integrationExtractor;
     }
 
     @PostConstruct
@@ -46,17 +53,33 @@ public class LogFileIndexer {
     }
 
     public void indexAllLogs() throws IOException {
-        log.info("Starting to index all log files (parallel mode, recursive)...");
+        log.info("Starting multi-index indexing...");
 
-        Path logsDir = Paths.get(properties.getLogsDir());
+        for (IndexConfig indexConfig : indexConfigService.getEnabledIndexes()) {
+            log.info("Indexing: {} ({}) [environment: {}]",
+                    indexConfig.getDisplayName(), indexConfig.getName(), indexConfig.getEnvironment());
+            indexIndex(indexConfig);
+        }
+
+        // Commit all index writers
+        indexService.commit();
+        indexService.deleteOldIndexes();
+
+        log.info("Multi-index indexing completed. Total files indexed: {}", indexedFiles.size());
+    }
+
+    /**
+     * Index a single index (log source)
+     */
+    private void indexIndex(IndexConfig indexConfig) throws IOException {
+        Path logsDir = Paths.get(indexConfig.getPath());
+
         if (!Files.exists(logsDir)) {
-            log.warn("Logs directory does not exist: {}", logsDir);
-            Files.createDirectories(logsDir);
-            log.info("Created logs directory: {}", logsDir);
+            log.warn("Index path does not exist, skipping: {} ({})", indexConfig.getName(), indexConfig.getPath());
             return;
         }
 
-        Pattern filePattern = Pattern.compile(properties.getFilePattern());
+        Pattern filePattern = Pattern.compile(indexConfig.getFilePattern());
         AtomicInteger processedFiles = new AtomicInteger(0);
 
         // Parallel indexing - process multiple files concurrently
@@ -66,41 +89,25 @@ public class LogFileIndexer {
                     .filter(path -> filePattern.matcher(path.getFileName().toString()).matches())
                     .parallel()  // Enable parallel processing
                     .forEach(path -> {
-                        indexLogFile(path);
+                        indexLogFile(path, indexConfig);
                         processedFiles.incrementAndGet();
                     });
         }
 
-        // Commit all index writers
-        indexService.commit();
-        indexService.deleteOldIndexes();
-
-        log.info("Parallel indexing completed. Total files indexed: {} (processed: {})",
-                indexedFiles.size(), processedFiles.get());
+        log.info("Indexed {} files for index: {}", processedFiles.get(), indexConfig.getName());
     }
 
     @Scheduled(fixedDelayString = "${log-search.watch-interval}000", initialDelay = 60000)
     public void watchForNewLogs() {
-        if (!properties.isAutoWatch()) {
-            return;
-        }
-
         try {
-            log.debug("Checking for new log files (recursive)...");
+            log.debug("Checking for new log files in all indexes (recursive)...");
 
-            Path logsDir = Paths.get(properties.getLogsDir());
-            if (!Files.exists(logsDir)) {
-                return;
-            }
+            for (IndexConfig indexConfig : indexConfigService.getEnabledIndexes()) {
+                if (!indexConfig.isAutoWatch()) {
+                    continue;
+                }
 
-            Pattern filePattern = Pattern.compile(properties.getFilePattern());
-
-            // Recursive scanning of subdirectories
-            try (Stream<Path> paths = Files.walk(logsDir)) {
-                paths.filter(Files::isRegularFile)
-                        .filter(path -> filePattern.matcher(path.getFileName().toString()).matches())
-                        .filter(path -> !indexedFiles.contains(path.toString()))
-                        .forEach(this::indexLogFile);
+                watchIndex(indexConfig);
             }
 
             indexService.commit();
@@ -111,7 +118,30 @@ public class LogFileIndexer {
         }
     }
 
-    private void indexLogFile(Path logFile) {
+    /**
+     * Watch a specific index for new files
+     */
+    private void watchIndex(IndexConfig indexConfig) throws IOException {
+        Path logsDir = Paths.get(indexConfig.getPath());
+        if (!Files.exists(logsDir)) {
+            return;
+        }
+
+        Pattern filePattern = Pattern.compile(indexConfig.getFilePattern());
+
+        // Recursive scanning of subdirectories
+        try (Stream<Path> paths = Files.walk(logsDir)) {
+            paths.filter(Files::isRegularFile)
+                    .filter(path -> filePattern.matcher(path.getFileName().toString()).matches())
+                    .filter(path -> !indexedFiles.contains(path.toString()))
+                    .forEach(path -> indexLogFile(path, indexConfig));
+        }
+    }
+
+    /**
+     * Index a single log file with index context
+     */
+    private void indexLogFile(Path logFile, IndexConfig indexConfig) {
         String filename = logFile.getFileName().toString();
         String absolutePath = logFile.toAbsolutePath().toString();
 
@@ -120,7 +150,8 @@ public class LogFileIndexer {
             return;
         }
 
-        log.info("Indexing log file: {}", filename);
+        log.info("Indexing log file: {} (index: {}, environment: {})",
+                filename, indexConfig.getName(), indexConfig.getEnvironment());
 
         AtomicLong lineNumber = new AtomicLong(0);
         AtomicLong indexedLines = new AtomicLong(0);
@@ -173,6 +204,11 @@ public class LogFileIndexer {
                                 currentEntry.setMessage(fullMessage);
                                 continuationLines.setLength(0);
                             }
+                            // Set index metadata
+                            currentEntry.setIndexName(indexConfig.getName());
+                            currentEntry.setEnvironment(indexConfig.getEnvironment());
+                            // Extract integration platform metadata
+                            integrationExtractor.enrichLogEntry(currentEntry);
                             indexService.indexLogEntry(currentEntry);
                             indexedLines.incrementAndGet();
                         } catch (IOException e) {
@@ -198,6 +234,11 @@ public class LogFileIndexer {
                         String fullMessage = currentEntry.getMessage() + "\n" + continuationLines.toString();
                         currentEntry.setMessage(fullMessage);
                     }
+                    // Set index metadata
+                    currentEntry.setIndexName(indexConfig.getName());
+                    currentEntry.setEnvironment(indexConfig.getEnvironment());
+                    // Extract integration platform metadata
+                    integrationExtractor.enrichLogEntry(currentEntry);
                     indexService.indexLogEntry(currentEntry);
                     indexedLines.incrementAndGet();
                 } catch (IOException e) {

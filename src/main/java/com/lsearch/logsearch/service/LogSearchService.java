@@ -77,7 +77,7 @@ public class LogSearchService {
     }
 
     public SearchResult search(String queryText, ZonedDateTime startTime, ZonedDateTime endTime,
-                               int page, int pageSize) throws Exception {
+                               int page, int pageSize, List<String> indexes, List<String> environments) throws Exception {
         long startMs = System.currentTimeMillis();
 
         // Determine which day-based indexes to search
@@ -101,7 +101,7 @@ public class LogSearchService {
         List<Future<DaySearchResult>> futures = new ArrayList<>();
 
         for (String date : datesToSearch) {
-            futures.add(searchExecutor.submit(() -> searchDayIndex(date, queryText, startTime, endTime)));
+            futures.add(searchExecutor.submit(() -> searchDayIndex(date, queryText, startTime, endTime, indexes, environments)));
         }
 
         // Collect results from all futures
@@ -165,7 +165,8 @@ public class LogSearchService {
      * Search a single day index (thread-safe, called in parallel)
      */
     private DaySearchResult searchDayIndex(String date, String queryText,
-                                           ZonedDateTime startTime, ZonedDateTime endTime) {
+                                           ZonedDateTime startTime, ZonedDateTime endTime,
+                                           List<String> indexes, List<String> environments) {
         Path indexPath = Paths.get(properties.getIndexDir(), date);
         if (!Files.exists(indexPath)) {
             return new DaySearchResult(new ArrayList<>(), 0);
@@ -184,7 +185,8 @@ public class LogSearchService {
 
             // Text search query (if provided) - search across all text fields
             if (queryText != null && !queryText.trim().isEmpty()) {
-                String[] fields = {"message", "user", "level", "thread", "logger"};
+                String[] fields = {"message", "user", "level", "thread", "logger", "correlationIdText",
+                                   "messageIdText", "flowNameText", "endpointText"};
                 MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer);
                 Query textQuery = parser.parse(queryText);
                 queryBuilder.add(textQuery, BooleanClause.Occur.MUST);
@@ -195,6 +197,26 @@ public class LogSearchService {
             long endEpoch = endTime.toInstant().toEpochMilli();
             Query timeRangeQuery = LongPoint.newRangeQuery("timestamp", startEpoch, endEpoch);
             queryBuilder.add(timeRangeQuery, BooleanClause.Occur.MUST);
+
+            // Index filter (if specified)
+            if (indexes != null && !indexes.isEmpty()) {
+                BooleanQuery.Builder indexFilter = new BooleanQuery.Builder();
+                for (String indexName : indexes) {
+                    indexFilter.add(new TermQuery(new org.apache.lucene.index.Term("indexName", indexName)),
+                            BooleanClause.Occur.SHOULD);
+                }
+                queryBuilder.add(indexFilter.build(), BooleanClause.Occur.MUST);
+            }
+
+            // Environment filter (if specified)
+            if (environments != null && !environments.isEmpty()) {
+                BooleanQuery.Builder envFilter = new BooleanQuery.Builder();
+                for (String env : environments) {
+                    envFilter.add(new TermQuery(new org.apache.lucene.index.Term("environment", env)),
+                            BooleanClause.Occur.SHOULD);
+                }
+                queryBuilder.add(envFilter.build(), BooleanClause.Occur.MUST);
+            }
 
             Query finalQuery = queryBuilder.build();
 

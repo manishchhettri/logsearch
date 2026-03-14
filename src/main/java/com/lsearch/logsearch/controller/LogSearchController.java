@@ -46,13 +46,15 @@ public class LogSearchController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) ZonedDateTime startTime,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) ZonedDateTime endTime,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "100") int pageSize) {
+            @RequestParam(defaultValue = "100") int pageSize,
+            @RequestParam(required = false) List<String> indexes,
+            @RequestParam(required = false) List<String> environments) {
 
         try {
-            log.info("Search request - query: '{}', startTime: {}, endTime: {}, page: {}, pageSize: {}",
-                    query, startTime, endTime, page, pageSize);
+            log.info("Search request - query: '{}', startTime: {}, endTime: {}, page: {}, pageSize: {}, indexes: {}, environments: {}",
+                    query, startTime, endTime, page, pageSize, indexes, environments);
 
-            SearchResult result = searchService.search(query, startTime, endTime, page, pageSize);
+            SearchResult result = searchService.search(query, startTime, endTime, page, pageSize, indexes, environments);
             return ResponseEntity.ok(result);
 
         } catch (Exception e) {

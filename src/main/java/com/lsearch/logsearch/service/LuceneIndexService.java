@@ -99,6 +99,40 @@ public class LuceneIndexService {
         doc.add(new LongPoint("lineNumber", entry.getLineNumber()));
         doc.add(new StoredField("lineNumber", entry.getLineNumber()));
 
+        // Multi-index support fields
+        if (entry.getIndexName() != null && !entry.getIndexName().isEmpty()) {
+            doc.add(new StringField("indexName", entry.getIndexName(), Field.Store.YES));
+        }
+
+        if (entry.getEnvironment() != null && !entry.getEnvironment().isEmpty()) {
+            doc.add(new StringField("environment", entry.getEnvironment(), Field.Store.YES));
+        }
+
+        // Integration platform support fields
+        if (entry.getIntegrationPlatform() != null && !entry.getIntegrationPlatform().isEmpty()) {
+            doc.add(new StringField("integrationPlatform", entry.getIntegrationPlatform(), Field.Store.YES));
+        }
+
+        if (entry.getCorrelationId() != null && !entry.getCorrelationId().isEmpty()) {
+            doc.add(new StringField("correlationId", entry.getCorrelationId(), Field.Store.YES));
+            doc.add(new TextField("correlationIdText", entry.getCorrelationId(), Field.Store.NO)); // For searching
+        }
+
+        if (entry.getMessageId() != null && !entry.getMessageId().isEmpty()) {
+            doc.add(new StringField("messageId", entry.getMessageId(), Field.Store.YES));
+            doc.add(new TextField("messageIdText", entry.getMessageId(), Field.Store.NO)); // For searching
+        }
+
+        if (entry.getFlowName() != null && !entry.getFlowName().isEmpty()) {
+            doc.add(new StringField("flowName", entry.getFlowName(), Field.Store.YES));
+            doc.add(new TextField("flowNameText", entry.getFlowName(), Field.Store.NO)); // For searching
+        }
+
+        if (entry.getEndpoint() != null && !entry.getEndpoint().isEmpty()) {
+            doc.add(new StringField("endpoint", entry.getEndpoint(), Field.Store.YES));
+            doc.add(new TextField("endpointText", entry.getEndpoint(), Field.Store.NO)); // For searching
+        }
+
         writer.addDocument(doc);
     }
 

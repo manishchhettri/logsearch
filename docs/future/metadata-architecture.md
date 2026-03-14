@@ -99,7 +99,16 @@ Stage 2: Deep content search → Only candidates → Results
 │       │   ├── 2026-03-12/
 │       │   └── ...
 │       │
-│       └── order-service/
+│       ├── order-service/
+│       │   └── ...
+│       │
+│       ├── iib-integration/         # IBM Integration Bus logs
+│       │   └── ...
+│       │
+│       ├── mq-broker/               # IBM MQ logs
+│       │   └── ...
+│       │
+│       └── esb-gateway/             # ESB/API Gateway logs
 │           └── ...
 ```
 
@@ -177,6 +186,32 @@ chunkMetadata.add(new StoredField("warnCount", 1203));
 // ===== Size Information =====
 chunkMetadata.add(new LongPoint("indexSizeBytes", 250000000L));
 chunkMetadata.add(new StoredField("indexSizeBytes", 250000000L));
+
+// ===== Integration Platform Support (IIB, MQ, ESB) =====
+chunkMetadata.add(new StringField("integrationPlatform", "IIB", Field.Store.YES));  // IIB, MQ, ESB, null
+chunkMetadata.add(new StringField("hasCorrelationId", "true", Field.Store.YES));
+chunkMetadata.add(new StringField("hasMessageId", "true", Field.Store.YES));
+
+// ===== Correlation Tracking =====
+// Sample of correlation IDs found in chunk (for correlation search)
+chunkMetadata.add(new TextField("correlationIds",
+    "txn-abc-123 txn-def-456 txn-ghi-789",
+    Field.Store.YES));
+
+// ===== Integration Flow Names =====
+chunkMetadata.add(new TextField("flowNames",
+    "PaymentProcessingFlow OrderValidationFlow CustomerLookupFlow",
+    Field.Store.YES));
+
+// ===== API Endpoints (for integration platforms) =====
+chunkMetadata.add(new TextField("endpoints",
+    "/api/payment /api/order /api/customer",
+    Field.Store.YES));
+
+// ===== Message IDs (for IIB/MQ message tracking) =====
+chunkMetadata.add(new TextField("messageIds",
+    "msg-001 msg-002 msg-003",
+    Field.Store.YES));
 ```
 
 ### Field Types Explained
@@ -1515,20 +1550,176 @@ Response:
 - Strategy selection based on config
 - Unit tests for chunking strategies
 
-### Phase 4: Integration Testing (Week 5)
+### Phase 4: Integration Platform Support & Correlation Tracking (Week 5)
+- Add IIB, MQ, ESB format patterns to LogPatternDetector
+- Implement IntegrationMetadataExtractor
+- Extract correlation IDs, message IDs, flow names, endpoints
+- Add integration-specific fields to ChunkMetadata
+- Implement correlation search API (`/api/search/correlation/{id}`)
+- Implement flow search API (`/api/search/flow/{flowName}`)
+- Unit tests for integration metadata extraction
+- Test correlation ID tracking and search
+
+**New Classes:**
+
+**IntegrationMetadataExtractor.java:**
+```java
+@Service
+public class IntegrationMetadataExtractor {
+
+    private static final Pattern CORRELATION_ID_PATTERN =
+        Pattern.compile("correlationId[=:\\s]+([a-zA-Z0-9-]+)");
+    private static final Pattern MESSAGE_ID_PATTERN =
+        Pattern.compile("messageId[=:\\s]+([a-zA-Z0-9-]+)");
+    private static final Pattern FLOW_NAME_PATTERN =
+        Pattern.compile("flow[=:\\s]+([a-zA-Z0-9_.-]+)");
+    private static final Pattern ENDPOINT_PATTERN =
+        Pattern.compile("(\/api\/[a-zA-Z0-9/_-]+)");
+
+    public void enrichMetadata(ChunkMetadata metadata, List<LogEntry> entries) {
+        Set<String> correlationIds = new HashSet<>();
+        Set<String> messageIds = new HashSet<>();
+        Set<String> flowNames = new HashSet<>();
+        Set<String> endpoints = new HashSet<>();
+
+        for (LogEntry entry : entries) {
+            String message = entry.getMessage();
+
+            // Extract correlation IDs
+            Matcher corrMatcher = CORRELATION_ID_PATTERN.matcher(message);
+            while (corrMatcher.find()) {
+                correlationIds.add(corrMatcher.group(1));
+            }
+
+            // Extract message IDs
+            Matcher msgMatcher = MESSAGE_ID_PATTERN.matcher(message);
+            while (msgMatcher.find()) {
+                messageIds.add(msgMatcher.group(1));
+            }
+
+            // Extract flow names
+            Matcher flowMatcher = FLOW_NAME_PATTERN.matcher(message);
+            while (flowMatcher.find()) {
+                flowNames.add(flowMatcher.group(1));
+            }
+
+            // Extract API endpoints
+            Matcher endpointMatcher = ENDPOINT_PATTERN.matcher(message);
+            while (endpointMatcher.find()) {
+                endpoints.add(endpointMatcher.group(1));
+            }
+        }
+
+        // Set metadata fields
+        metadata.setCorrelationIds(correlationIds);
+        metadata.setHasCorrelationId(!correlationIds.isEmpty());
+        metadata.setMessageIds(messageIds);
+        metadata.setHasMessageId(!messageIds.isEmpty());
+        metadata.setFlowNames(flowNames);
+        metadata.setEndpoints(endpoints);
+
+        // Detect integration platform
+        String platform = detectIntegrationPlatform(entries);
+        metadata.setIntegrationPlatform(platform);
+    }
+
+    private String detectIntegrationPlatform(List<LogEntry> entries) {
+        for (LogEntry entry : entries) {
+            String message = entry.getMessage();
+            if (message.contains("BIP") && message.matches(".*BIP\\d+[A-Z]:.*")) {
+                return "IIB";
+            }
+            if (message.contains("AMQ") && message.matches(".*AMQ\\d+[A-Z]:.*")) {
+                return "MQ";
+            }
+            if (message.contains("WSWS") || message.contains("CWSWS")) {
+                return "ESB";
+            }
+        }
+        return null;
+    }
+}
+```
+
+**CorrelationSearchController.java:**
+```java
+@RestController
+@RequestMapping("/api/search")
+public class CorrelationSearchController {
+
+    private final MetadataIndexService metadataService;
+    private final LogSearchService searchService;
+
+    /**
+     * Search by correlation ID across all services and chunks
+     */
+    @GetMapping("/correlation/{correlationId}")
+    public ResponseEntity<CorrelationSearchResult> searchByCorrelation(
+            @PathVariable String correlationId,
+            @RequestParam(required = false, defaultValue = "100") int limit) {
+
+        try {
+            // Step 1: Find chunks containing this correlation ID
+            List<ChunkCandidate> candidates = metadataService
+                .findChunksWithCorrelationId(correlationId);
+
+            // Step 2: Search only those chunks
+            List<LogEntry> entries = searchService
+                .searchChunksByCorrelationId(candidates, correlationId, limit);
+
+            // Step 3: Sort chronologically to show transaction timeline
+            entries.sort(Comparator.comparing(LogEntry::getTimestamp));
+
+            CorrelationSearchResult result = new CorrelationSearchResult();
+            result.setCorrelationId(correlationId);
+            result.setEntries(entries);
+            result.setTimeline(buildTimeline(entries));
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Search by flow name
+     */
+    @GetMapping("/flow/{flowName}")
+    public ResponseEntity<List<LogEntry>> searchByFlow(
+            @PathVariable String flowName,
+            @RequestParam Long startTime,
+            @RequestParam Long endTime,
+            @RequestParam(required = false, defaultValue = "100") int limit) {
+
+        // Find chunks with this flow name
+        List<ChunkCandidate> candidates = metadataService
+            .findChunksWithFlow(flowName, startTime, endTime);
+
+        // Search those chunks
+        List<LogEntry> entries = searchService
+            .searchChunksForFlow(candidates, flowName, limit);
+
+        return ResponseEntity.ok(entries);
+    }
+}
+```
+
+### Phase 5: Integration Testing (Week 6)
 - End-to-end tests with all components
 - Load testing with realistic data (100GB+)
 - Performance benchmarking
 - Verify Bloom filter pruning efficiency
 - Verify adaptive chunking behavior under varied traffic
 
-### Phase 5: Beta Deployment (Week 6-7)
+### Phase 6: Beta Deployment (Week 7-8)
 - Deploy to staging environment
-- Small user group testing
+- Small user group testing (include integration platform logs)
 - Collect performance metrics
 - Collect feedback on predictability
+- Test correlation search with real integration logs
 
-### Phase 6: Production Rollout (Week 8)
+### Phase 7: Production Rollout (Week 9)
 - Documentation updates
 - Production deployment
 - Migration guide for existing users

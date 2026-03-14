@@ -1,5 +1,7 @@
 package com.lsearch.logsearch.controller;
 
+import com.lsearch.logsearch.config.LogSearchProperties;
+import com.lsearch.logsearch.model.DownloadLocation;
 import com.lsearch.logsearch.service.LogDownloadService;
 import com.lsearch.logsearch.service.LogFileIndexer;
 import org.slf4j.Logger;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
@@ -20,10 +23,33 @@ public class LogDownloadController {
 
     private final LogDownloadService downloadService;
     private final LogFileIndexer fileIndexer;
+    private final LogSearchProperties properties;
 
-    public LogDownloadController(LogDownloadService downloadService, LogFileIndexer fileIndexer) {
+    public LogDownloadController(LogDownloadService downloadService, LogFileIndexer fileIndexer,
+                                 LogSearchProperties properties) {
         this.downloadService = downloadService;
         this.fileIndexer = fileIndexer;
+        this.properties = properties;
+    }
+
+    /**
+     * Get configured default download locations
+     * GET /api/download-locations
+     */
+    @GetMapping("/download-locations")
+    public ResponseEntity<List<DownloadLocation>> getDownloadLocations() {
+        List<DownloadLocation> locations = properties.getDownloadLocations();
+
+        if (locations == null || locations.isEmpty()) {
+            return ResponseEntity.ok(new java.util.ArrayList<>());
+        }
+
+        // Only return enabled locations
+        List<DownloadLocation> enabledLocations = locations.stream()
+                .filter(DownloadLocation::isEnabled)
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(enabledLocations);
     }
 
     @PostMapping("/download-logs")
@@ -36,12 +62,26 @@ public class LogDownloadController {
                 return ResponseEntity.badRequest().body(createErrorResponse("No URLs provided"));
             }
 
+            // Find target path from download location configuration
+            String targetPath = findTargetPathForUrl(request.getUrls().get(0));
+
             // Download and extract logs
-            LogDownloadService.DownloadResult result = downloadService.downloadLogs(
-                    request.getUrls(),
-                    request.getUsername(),
-                    request.getPassword()
-            );
+            LogDownloadService.DownloadResult result;
+            if (targetPath != null) {
+                log.info("Using configured target path: {}", targetPath);
+                result = downloadService.downloadLogs(
+                        request.getUrls(),
+                        request.getUsername(),
+                        request.getPassword(),
+                        targetPath
+                );
+            } else {
+                result = downloadService.downloadLogs(
+                        request.getUrls(),
+                        request.getUsername(),
+                        request.getPassword()
+                );
+            }
 
             // Trigger re-indexing if any files were downloaded
             if (result.getTotalFiles() > 0) {
@@ -75,6 +115,24 @@ public class LogDownloadController {
         response.put("success", false);
         response.put("message", message);
         return response;
+    }
+
+    /**
+     * Find the target path for a given URL from configured download locations
+     */
+    private String findTargetPathForUrl(String url) {
+        List<DownloadLocation> locations = properties.getDownloadLocations();
+        if (locations == null || locations.isEmpty()) {
+            return null;
+        }
+
+        for (DownloadLocation location : locations) {
+            if (location.getUrl() != null && url.startsWith(location.getUrl())) {
+                return location.getTargetPath();
+            }
+        }
+
+        return null;
     }
 
     public static class DownloadRequest {
