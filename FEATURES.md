@@ -27,7 +27,7 @@
 - ✅ **Context View** - See surrounding logs before/after a specific entry
 - ✅ **Field Highlighting** - Automatic highlighting of errors, exceptions, IPs, URLs, timestamps, paths, IDs
 
-### Productivity Features ⚡
+### Productivity Features
 - ✅ **Saved Searches** - Persist and reload common queries with relative time support
 - ✅ **Custom Dashboards** - Create, save, and manage dashboards with analytics widgets
 - ✅ **Dashboard Widgets** - Pie charts, stacked bar charts, statistics cards
