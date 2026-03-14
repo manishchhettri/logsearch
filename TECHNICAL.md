@@ -722,27 +722,44 @@ private void indexFile(Path filePath) {
 **Type**: Service
 
 **Responsibilities**:
-- Downloads log files from URLs or file paths
-- Supports concurrent downloads (up to 5 simultaneous)
+- Downloads log files from URLs or file paths using **pure Java** (no external dependencies)
+- Uses `HttpURLConnection` for HTTP/HTTPS downloads (not curl or external tools)
 - Auto-detects directories and recursively downloads .log files
 - Copies files to local logs directory for indexing
 - Provides download progress and error reporting
+- Auto-extracts .gz and .zip archives
 
-**Key Features**:
+**Implementation Details**:
 ```java
 @Service
 public class LogDownloadService {
-    private static final int MAX_CONCURRENT_DOWNLOADS = 5;
+    // Uses Java's built-in HttpURLConnection for HTTP downloads
+    // No external dependencies (curl, wget, etc.)
 
-    public Map<String, String> downloadLogs(List<String> sources) {
-        // Download from URLs or local paths
-        // Auto-detect directories vs files
-        // Handle HTTP/HTTPS and file:// protocols
-        // Copy to logs directory
-        // Return status for each source
+    public DownloadResult downloadLogs(List<String> urls, String username, String password) {
+        // For each URL:
+        // 1. Open HttpURLConnection (Java SE standard library)
+        // 2. Set Basic Auth headers if credentials provided
+        // 3. Auto-detect directory listings (parse HTML for .log links)
+        // 4. Download files using streaming I/O (8KB buffer)
+        // 5. Auto-extract .gz (GZIPInputStream) and .zip (ZipInputStream)
+        // 6. Detect binary vs text files (skip binaries)
+        // 7. Copy to logs directory
     }
 }
 ```
+
+**HTTP Client**:
+- Uses `java.net.HttpURLConnection` (JDK built-in)
+- Supports Basic authentication (Base64 encoded)
+- Configurable timeouts (30s connect, 5min read)
+- Streaming downloads (efficient memory usage)
+
+**File Processing**:
+- Auto-detects and extracts .gz files (`GZIPInputStream`)
+- Auto-detects and extracts .zip archives (`ZipInputStream`)
+- Binary file detection (checks for null bytes, printable character ratio)
+- Skips non-text files without known log extensions
 
 **Download Sources**:
 - **HTTP/HTTPS URLs**: Downloads remote log files
