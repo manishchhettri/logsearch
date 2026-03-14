@@ -17,6 +17,7 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +29,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -38,9 +40,39 @@ public class LogSearchService {
 
     private final LogSearchProperties properties;
     private final CodeAnalyzer analyzer = new CodeAnalyzer();
+    private final ExecutorService searchExecutor;
 
     public LogSearchService(LogSearchProperties properties) {
         this.properties = properties;
+        // Create thread pool for parallel searching
+        // Use available processors for optimal performance
+        int threadCount = Math.max(4, Runtime.getRuntime().availableProcessors());
+        this.searchExecutor = Executors.newFixedThreadPool(threadCount,
+                new ThreadFactory() {
+                    private int counter = 0;
+                    @Override
+                    public Thread newThread(Runnable r) {
+                        Thread t = new Thread(r);
+                        t.setName("log-search-" + counter++);
+                        t.setDaemon(true);
+                        return t;
+                    }
+                });
+        log.info("Initialized parallel search with {} threads", threadCount);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        log.info("Shutting down search executor");
+        searchExecutor.shutdown();
+        try {
+            if (!searchExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                searchExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            searchExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     public SearchResult search(String queryText, ZonedDateTime startTime, ZonedDateTime endTime,
@@ -64,52 +96,29 @@ public class LogSearchService {
         log.info("Searching {} day-based indexes from {} to {}", datesToSearch.size(),
                 datesToSearch.get(0), datesToSearch.get(datesToSearch.size() - 1));
 
+        // Parallel search across day indexes
+        List<Future<DaySearchResult>> futures = new ArrayList<>();
+
+        for (String date : datesToSearch) {
+            futures.add(searchExecutor.submit(() -> searchDayIndex(date, queryText, startTime, endTime)));
+        }
+
+        // Collect results from all futures
         List<LogEntry> allResults = new ArrayList<>();
         long totalHits = 0;
 
-        // Search each day index
-        for (String date : datesToSearch) {
-            Path indexPath = Paths.get(properties.getIndexDir(), date);
-            if (!Files.exists(indexPath)) {
-                continue;
-            }
-
-            try (Directory directory = FSDirectory.open(indexPath);
-                 IndexReader reader = DirectoryReader.open(directory)) {
-
-                IndexSearcher searcher = new IndexSearcher(reader);
-
-                // Build query
-                BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder();
-
-                // Text search query (if provided) - search across all text fields
-                if (queryText != null && !queryText.trim().isEmpty()) {
-                    String[] fields = {"message", "user", "level", "thread", "logger"};
-                    MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer);
-                    Query textQuery = parser.parse(queryText);
-                    queryBuilder.add(textQuery, BooleanClause.Occur.MUST);
-                }
-
-                // Time range query
-                long startEpoch = startTime.toInstant().toEpochMilli();
-                long endEpoch = endTime.toInstant().toEpochMilli();
-                Query timeRangeQuery = LongPoint.newRangeQuery("timestamp", startEpoch, endEpoch);
-                queryBuilder.add(timeRangeQuery, BooleanClause.Occur.MUST);
-
-                Query finalQuery = queryBuilder.build();
-
-                // Execute search (get more than needed for pagination across indexes)
-                TopDocs topDocs = searcher.search(finalQuery, 10000);
-                totalHits += topDocs.totalHits.value;
-
-                // Collect results
-                for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
-                    Document doc = searcher.doc(scoreDoc.doc);
-                    allResults.add(documentToLogEntry(doc));
-                }
-
-            } catch (Exception e) {
-                log.error("Error searching index for date: {}", date, e);
+        for (Future<DaySearchResult> future : futures) {
+            try {
+                DaySearchResult result = future.get(30, TimeUnit.SECONDS);
+                allResults.addAll(result.entries);
+                totalHits += result.totalHits;
+            } catch (TimeoutException e) {
+                log.error("Search timed out for a day index", e);
+            } catch (ExecutionException e) {
+                log.error("Error searching day index", e.getCause());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Search interrupted", e);
             }
         }
 
@@ -136,6 +145,73 @@ public class LogSearchService {
                 .pageSize(pageSize)
                 .searchTimeMs(searchTimeMs)
                 .build();
+    }
+
+    /**
+     * Inner class to hold search results from a single day index
+     */
+    private static class DaySearchResult {
+        final List<LogEntry> entries;
+        final long totalHits;
+
+        DaySearchResult(List<LogEntry> entries, long totalHits) {
+            this.entries = entries;
+            this.totalHits = totalHits;
+        }
+    }
+
+    /**
+     * Search a single day index (thread-safe, called in parallel)
+     */
+    private DaySearchResult searchDayIndex(String date, String queryText,
+                                           ZonedDateTime startTime, ZonedDateTime endTime) {
+        Path indexPath = Paths.get(properties.getIndexDir(), date);
+        if (!Files.exists(indexPath)) {
+            return new DaySearchResult(new ArrayList<>(), 0);
+        }
+
+        List<LogEntry> entries = new ArrayList<>();
+        long totalHits = 0;
+
+        try (Directory directory = FSDirectory.open(indexPath);
+             IndexReader reader = DirectoryReader.open(directory)) {
+
+            IndexSearcher searcher = new IndexSearcher(reader);
+
+            // Build query
+            BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder();
+
+            // Text search query (if provided) - search across all text fields
+            if (queryText != null && !queryText.trim().isEmpty()) {
+                String[] fields = {"message", "user", "level", "thread", "logger"};
+                MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer);
+                Query textQuery = parser.parse(queryText);
+                queryBuilder.add(textQuery, BooleanClause.Occur.MUST);
+            }
+
+            // Time range query
+            long startEpoch = startTime.toInstant().toEpochMilli();
+            long endEpoch = endTime.toInstant().toEpochMilli();
+            Query timeRangeQuery = LongPoint.newRangeQuery("timestamp", startEpoch, endEpoch);
+            queryBuilder.add(timeRangeQuery, BooleanClause.Occur.MUST);
+
+            Query finalQuery = queryBuilder.build();
+
+            // Execute search (get more than needed for pagination across indexes)
+            TopDocs topDocs = searcher.search(finalQuery, 10000);
+            totalHits = topDocs.totalHits.value;
+
+            // Collect results
+            for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                Document doc = searcher.doc(scoreDoc.doc);
+                entries.add(documentToLogEntry(doc));
+            }
+
+        } catch (Exception e) {
+            log.error("Error searching index for date: {}", date, e);
+        }
+
+        return new DaySearchResult(entries, totalHits);
     }
 
     private List<String> getDateRangeDirs(ZonedDateTime startTime, ZonedDateTime endTime) throws IOException {

@@ -5,6 +5,22 @@
 server:
   port: 8080
 
+# JVM Configuration (used by start.sh / start.bat)
+jvm:
+  # Heap size configuration
+  # Examples: 512m, 1g, 2g, 4g, 8g, 12g
+  # Recommended:
+  #   - 1-2 GB raw logs/day: 2g
+  #   - 5 GB raw logs/day: 4-6g
+  #   - 10 GB raw logs/day: 8-12g
+  #   - 20+ GB raw logs/day: 16g+
+  heap-min: ${JVM_HEAP_MIN:2g}
+  heap-max: ${JVM_HEAP_MAX:4g}
+
+  # Additional JVM options (optional)
+  # Default uses G1GC for better performance with large heaps
+  extra-opts: ${JVM_EXTRA_OPTS:-XX:+UseG1GC -XX:MaxGCPauseMillis=200}
+
 log-search:
   # Directory containing log files to index
   logs-dir: ${LOGS_DIR:./logs}
