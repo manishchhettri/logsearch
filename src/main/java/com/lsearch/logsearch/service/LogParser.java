@@ -74,13 +74,25 @@ public class LogParser {
             return null;
         }
 
-        // Tier 2: Try to auto-detect timestamp in line
+        // Tier 2: Try JSON format
+        entry = tryJsonFormat(line, sourceFile, lineNumber);
+        if (entry != null) {
+            return entry;
+        }
+
+        // Tier 3: Try Apache/nginx access log format
+        entry = tryApacheFormat(line, sourceFile, lineNumber);
+        if (entry != null) {
+            return entry;
+        }
+
+        // Tier 4: Try to auto-detect timestamp in line
         entry = tryTimestampExtraction(line, sourceFile, lineNumber);
         if (entry != null) {
             return entry;
         }
 
-        // Tier 3: File-based fallback
+        // Tier 5: File-based fallback
         return createFallbackEntry(line, sourceFile, lineNumber, filePath);
     }
 
@@ -165,6 +177,126 @@ public class LogParser {
         }
 
         return null;
+    }
+
+    private LogEntry tryJsonFormat(String line, String sourceFile, long lineNumber) {
+        String trimmed = line.trim();
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+            return null;
+        }
+
+        try {
+            // Simple JSON parsing without external libraries
+            // Look for common JSON log fields: timestamp, level, message, logger, etc.
+            String timestamp = extractJsonField(trimmed, "timestamp", "time", "date", "@timestamp");
+            String level = extractJsonField(trimmed, "level", "severity", "loglevel");
+            String message = extractJsonField(trimmed, "message", "msg", "text");
+            String logger = extractJsonField(trimmed, "logger", "name", "component");
+            String thread = extractJsonField(trimmed, "thread", "threadName");
+            String user = extractJsonField(trimmed, "user", "userId", "username");
+
+            if (message == null) {
+                message = trimmed; // Use whole JSON as message if no message field found
+            }
+
+            ZonedDateTime parsedTimestamp = null;
+            if (timestamp != null) {
+                parsedTimestamp = parseDetectedTimestamp(timestamp);
+                if (parsedTimestamp == null) {
+                    // Try ISO instant format (common in JSON logs)
+                    try {
+                        parsedTimestamp = ZonedDateTime.parse(timestamp);
+                    } catch (Exception e) {
+                        // Timestamp parsing failed, will fall back to current time
+                    }
+                }
+            }
+
+            if (parsedTimestamp == null) {
+                parsedTimestamp = ZonedDateTime.now(ZoneId.of(properties.getTimezone()));
+            }
+
+            log.debug("Parsed JSON log format in line {}", lineNumber);
+            return LogEntry.builder()
+                    .timestamp(parsedTimestamp)
+                    .level(level)
+                    .message(message)
+                    .logger(logger)
+                    .thread(thread)
+                    .user(user)
+                    .sourceFile(sourceFile)
+                    .lineNumber(lineNumber)
+                    .build();
+
+        } catch (Exception e) {
+            log.debug("Failed to parse as JSON: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String extractJsonField(String json, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            Pattern pattern = Pattern.compile("\"" + fieldName + "\"\\s*:\\s*\"([^\"]+)\"");
+            Matcher matcher = pattern.matcher(json);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+            // Also try non-quoted values (numbers, booleans)
+            pattern = Pattern.compile("\"" + fieldName + "\"\\s*:\\s*([^,}\\]]+)");
+            matcher = pattern.matcher(json);
+            if (matcher.find()) {
+                return matcher.group(1).trim();
+            }
+        }
+        return null;
+    }
+
+    private LogEntry tryApacheFormat(String line, String sourceFile, long lineNumber) {
+        // Apache/nginx combined log format:
+        // 127.0.0.1 - user [timestamp] "GET /path HTTP/1.1" 200 1234 "referer" "user-agent"
+        Pattern apachePattern = Pattern.compile(
+            "^([\\d.]+) \\S+ (\\S+) \\[([^\\]]+)\\] \"([A-Z]+) ([^\"]+) HTTP/[^\"]+\" (\\d{3}) (\\d+|-).*"
+        );
+
+        Matcher matcher = apachePattern.matcher(line);
+        if (!matcher.matches()) {
+            return null;
+        }
+
+        try {
+            String ip = matcher.group(1);
+            String user = matcher.group(2);
+            String timestampStr = matcher.group(3);
+            String method = matcher.group(4);
+            String path = matcher.group(5);
+            String status = matcher.group(6);
+            String size = matcher.group(7);
+
+            // Parse Apache timestamp format: dd/MMM/yyyy:HH:mm:ss Z
+            DateTimeFormatter apacheFormatter = DateTimeFormatter.ofPattern("dd/MMM/yyyy:HH:mm:ss Z");
+            ZonedDateTime timestamp = ZonedDateTime.parse(timestampStr, apacheFormatter);
+
+            String level = "INFO";
+            if (status.startsWith("4") || status.startsWith("5")) {
+                level = "ERROR";
+            }
+
+            String message = String.format("%s %s %s %s %s", method, path, status, size, ip);
+
+            log.debug("Parsed Apache log format in line {}", lineNumber);
+            return LogEntry.builder()
+                    .timestamp(timestamp)
+                    .level(level)
+                    .message(message)
+                    .user(user.equals("-") ? null : user)
+                    .sourceFile(sourceFile)
+                    .lineNumber(lineNumber)
+                    .build();
+
+        } catch (Exception e) {
+            log.debug("Failed to parse as Apache format: {}", e.getMessage());
+            return null;
+        }
     }
 
     private LogEntry tryTimestampExtraction(String line, String sourceFile, long lineNumber) {

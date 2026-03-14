@@ -1,5 +1,6 @@
 package com.lsearch.logsearch.controller;
 
+import com.lsearch.logsearch.config.LogSearchProperties;
 import com.lsearch.logsearch.model.AggregationResult;
 import com.lsearch.logsearch.model.SearchResult;
 import com.lsearch.logsearch.service.LogFileIndexer;
@@ -10,9 +11,17 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @RestController
 @RequestMapping("/api")
@@ -23,10 +32,12 @@ public class LogSearchController {
 
     private final LogSearchService searchService;
     private final LogFileIndexer fileIndexer;
+    private final LogSearchProperties properties;
 
-    public LogSearchController(LogSearchService searchService, LogFileIndexer fileIndexer) {
+    public LogSearchController(LogSearchService searchService, LogFileIndexer fileIndexer, LogSearchProperties properties) {
         this.searchService = searchService;
         this.fileIndexer = fileIndexer;
+        this.properties = properties;
     }
 
     @GetMapping("/search")
@@ -100,5 +111,55 @@ public class LogSearchController {
         status.put("indexedFiles", fileIndexer.getIndexedFileCount());
 
         return ResponseEntity.ok(status);
+    }
+
+    @GetMapping("/context")
+    public ResponseEntity<Map<String, Object>> getContext(
+            @RequestParam String sourceFile,
+            @RequestParam long lineNumber,
+            @RequestParam(defaultValue = "10") int contextLines) {
+
+        try {
+            Path logFilePath = Paths.get(properties.getLogsDir(), sourceFile);
+
+            if (!Files.exists(logFilePath)) {
+                log.warn("Log file not found: {}", logFilePath);
+                return ResponseEntity.notFound().build();
+            }
+
+            // Read all lines
+            List<String> allLines;
+            try (Stream<String> lines = Files.lines(logFilePath)) {
+                allLines = lines.collect(Collectors.toList());
+            }
+
+            // Calculate range
+            int totalLines = allLines.size();
+            long targetLine = lineNumber - 1; // Convert to 0-based index
+            int startLine = Math.max(0, (int)(targetLine - contextLines));
+            int endLine = Math.min(totalLines, (int)(targetLine + contextLines + 1));
+
+            // Extract context
+            List<Map<String, Object>> contextEntries = new ArrayList<>();
+            for (int i = startLine; i < endLine; i++) {
+                Map<String, Object> entry = new HashMap<>();
+                entry.put("lineNumber", i + 1);
+                entry.put("content", allLines.get(i));
+                entry.put("isTarget", i == targetLine);
+                contextEntries.add(entry);
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("sourceFile", sourceFile);
+            response.put("targetLine", lineNumber);
+            response.put("contextLines", contextEntries);
+            response.put("totalLines", totalLines);
+
+            return ResponseEntity.ok(response);
+
+        } catch (IOException e) {
+            log.error("Error reading context from file: {}", sourceFile, e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
 }

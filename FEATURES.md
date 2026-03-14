@@ -40,11 +40,13 @@
 - ⚙️ **Unlimited results (1000+ per search)**
 
 ### Productivity Features ⚡
-- **Saved Searches** - Persist and share common queries
-- **Dashboards** - Custom views with multiple saved searches
-- **Share Links** - Shareable URLs with filter state
-- **Advanced Export** - JSON, Excel, formatted reports
-- **Bulk Operations** - Export all results (not just current page)
+- ✅ **Saved Searches** - Persist and reload common queries with relative time support
+- ✅ **Dashboards** - Custom views with analytics widgets (pie charts, bar charts, statistics)
+- ✅ **Dashboard Drill-down** - Navigate from aggregated stats to detailed search results
+- ✅ **Relative Time Ranges** - Auto-updating time windows (Last 1h, 6h, 24h, 2d, 7d)
+- ⚙️ **Share Links** - Shareable URLs with filter state
+- ⚙️ **Advanced Export** - JSON, Excel, formatted reports
+- ⚙️ **Bulk Operations** - Export all results (not just current page)
 
 ### Real-time Monitoring 🔴
 - **Live Tail** - Real-time log streaming (WebSocket)
@@ -97,11 +99,13 @@
 - ✅ Timeline visualization
 - ✅ Quick filters (faceted sidebar)
 
-**Phase 2 - Enhanced UX** (1 week)
-- Context view
-- Saved searches
-- Export improvements
-- Share links
+**Phase 2 - Enhanced UX** ✅ COMPLETED
+- ✅ Context view (see logs before/after)
+- ✅ Saved searches with relative time support
+- ✅ Dashboards with widgets and drill-down
+- ✅ Field highlighting (errors, exceptions, IPs, URLs, etc.)
+- ⚙️ Export improvements
+- ⚙️ Share links
 
 **Phase 3 - Real-time & Patterns** (1-2 weeks)
 - Pattern detection
@@ -116,9 +120,9 @@
 
 ---
 
-## Current Status: Phase 1 Complete ✅
+## Current Status: Phase 1 & 2 Complete ✅
 
-### Completed Features (as of March 13, 2026)
+### Completed Features (as of March 14, 2026)
 
 **Backend:**
 - ✅ Aggregations API endpoint (`/api/aggregations`)
@@ -139,16 +143,32 @@
 - ✅ Pattern alerts with severity levels
 - ✅ Click-to-filter facet interaction
 - ✅ Toggle analytics visibility
+- ✅ Custom Dashboards tab with CRUD operations
+- ✅ Dashboard widgets (pie charts, stacked bar charts, statistics)
+- ✅ Field highlighting for errors, exceptions, IPs, URLs, timestamps, paths, IDs
+- ✅ Saved searches with localStorage persistence
+- ✅ Quick time range buttons (Last 1h, 6h, 24h, 2d, 7d)
+- ✅ Relative time support with auto-refresh
+- ✅ Context view modal showing surrounding log lines
+- ✅ Dashboard-to-search drill-down navigation
+
+**Multi-Format Log Parsing:**
+- ✅ JSON log format detection and field extraction
+- ✅ Apache/nginx access log format support
+- ✅ 5-tier fallback parsing strategy
+- ✅ Auto-detection of common timestamp formats
 
 **Verified Testing:**
 - ✅ API returns correct aggregations (tested with 7,665 logs)
 - ✅ Timeline generates 263 hourly data points
-- ✅ Pattern detection with class-level detail:
-  - Example: "NullPointerException in EvidenceProcessor (140), WorkflowEngine (100), TransactionManager (70)"
-  - Shows top 3 classes per exception type with occurrence counts
+- ✅ Pattern detection with class-level detail
 - ✅ UI loads with all components
 - ✅ Async aggregations don't block search results (~0.6s independent load time)
+- ✅ Dashboards with relative time auto-refresh
+- ✅ Field highlighting across all log message types
+- ✅ Dashboard-to-search navigation preserves query and time context
+- ✅ JSON and Apache log formats correctly parsed and indexed
 
-### Next Steps: Phase 2 - Enhanced UX
-All premium features will be implemented and available initially.
+### Next Steps: Phase 3 - Real-time & Advanced Patterns
+All Phase 1 and Phase 2 features are implemented and available.
 Free tier limitations can be enforced via configuration flag in future releases.

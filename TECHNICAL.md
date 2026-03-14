@@ -25,6 +25,7 @@
 | **Apache Lucene** | 8.11.2 | Full-text search and indexing engine |
 | **Apache Tomcat** | 9.0.83 | Embedded web server (via Spring Boot) |
 | **Maven** | 3.6+ | Build tool and dependency management |
+| **Chart.js** | 4.4.0 | Frontend charting library for dashboards and analytics |
 
 ### Lucene Dependencies
 
@@ -139,7 +140,9 @@ com.lsearch.logsearch/
 │
 ├── model/
 │   ├── LogEntry.java                  # Domain model for a single log entry
-│   └── SearchResult.java              # Search response model (results + metadata)
+│   ├── SearchResult.java              # Search response model (results + metadata)
+│   ├── AggregationResult.java         # Aggregation response with facets and timelines
+│   └── Facet.java                     # Facet model (value, count, percentage)
 │
 └── service/
     ├── LogParser.java                 # Parses log lines into LogEntry objects
@@ -336,7 +339,7 @@ public boolean looksLikeContinuationLine(String line) {
 }
 ```
 
-**3-Tier Fallback Parsing**:
+**5-Tier Fallback Parsing**:
 ```java
 public LogEntry parseLine(String line, String sourceFile, long lineNumber, Path filePath) {
     // Tier 1: Try primary configured pattern
@@ -346,13 +349,76 @@ public LogEntry parseLine(String line, String sourceFile, long lineNumber, Path 
     // If fallback disabled, stop here
     if (!properties.isEnableFallback()) return null;
 
-    // Tier 2: Auto-detect timestamp in line
+    // Tier 2: Try JSON format
+    entry = tryJsonFormat(line, sourceFile, lineNumber);
+    if (entry != null) return entry;
+
+    // Tier 3: Try Apache/nginx access log format
+    entry = tryApacheFormat(line, sourceFile, lineNumber);
+    if (entry != null) return entry;
+
+    // Tier 4: Auto-detect timestamp in line
     // Tries: ISO 8601, Apache/NCSA, Syslog, etc.
     entry = tryTimestampExtraction(line, sourceFile, lineNumber);
     if (entry != null) return entry;
 
-    // Tier 3: Use file metadata (filename date or file modified time)
+    // Tier 5: Use file metadata (filename date or file modified time)
     return createFallbackEntry(line, sourceFile, lineNumber, filePath);
+}
+```
+
+**JSON Log Parsing**:
+```java
+private LogEntry tryJsonFormat(String line, String sourceFile, long lineNumber) {
+    String trimmed = line.trim();
+    if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+        return null;
+    }
+
+    // Extract common JSON log fields using regex
+    String timestamp = extractJsonField(trimmed, "timestamp", "time", "date", "@timestamp");
+    String level = extractJsonField(trimmed, "level", "severity", "loglevel");
+    String message = extractJsonField(trimmed, "message", "msg", "text");
+    String logger = extractJsonField(trimmed, "logger", "name", "component");
+    String thread = extractJsonField(trimmed, "thread", "threadName");
+    String user = extractJsonField(trimmed, "user", "userId", "username");
+
+    // Build LogEntry from extracted fields
+    return LogEntry.builder()
+            .timestamp(parsedTimestamp)
+            .level(level)
+            .message(message)
+            .logger(logger)
+            .thread(thread)
+            .user(user)
+            .sourceFile(sourceFile)
+            .lineNumber(lineNumber)
+            .build();
+}
+```
+
+**Apache/Nginx Log Parsing**:
+```java
+private LogEntry tryApacheFormat(String line, String sourceFile, long lineNumber) {
+    // Apache/nginx combined log format:
+    // 127.0.0.1 - user [timestamp] "GET /path HTTP/1.1" 200 1234 "referer" "user-agent"
+    Pattern apachePattern = Pattern.compile(
+        "^([\\d.]+) \\S+ (\\S+) \\[([^\\]]+)\\] \"([A-Z]+) ([^\"]+) HTTP/[^\"]+\" (\\d{3}) (\\d+|-).*"
+    );
+
+    // Parse and extract IP, user, timestamp, method, path, status
+    // Map status codes to log levels (4xx/5xx = ERROR, others = INFO)
+    DateTimeFormatter apacheFormatter = DateTimeFormatter.ofPattern("dd/MMM/yyyy:HH:mm:ss Z");
+    ZonedDateTime timestamp = ZonedDateTime.parse(timestampStr, apacheFormatter);
+
+    return LogEntry.builder()
+            .timestamp(timestamp)
+            .level(level)
+            .message(message)
+            .user(user.equals("-") ? null : user)
+            .sourceFile(sourceFile)
+            .lineNumber(lineNumber)
+            .build();
 }
 ```
 
@@ -986,6 +1052,92 @@ Regex:          /error.*/
 
 **Description**: Manually triggers re-indexing of all log files
 
+---
+
+### 4. Get Aggregations
+
+**Endpoint**: `GET /api/aggregations`
+
+**Parameters**:
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `query` | String | No | Search query (same as /api/search) |
+| `startTime` | ISO-8601 DateTime | Yes | Start of time range |
+| `endTime` | ISO-8601 DateTime | Yes | End of time range |
+
+**Description**: Returns aggregations and analytics for the search results
+
+**Example Request**:
+```bash
+curl "http://localhost:8080/api/aggregations?query=error&startTime=2026-03-12T00:00:00Z&endTime=2026-03-13T23:59:59Z"
+```
+
+**Response**:
+```json
+{
+  "totalHits": 1523,
+  "levelFacets": [
+    {"value": "ERROR", "count": 456, "percentage": 29.9},
+    {"value": "WARN", "count": 234, "percentage": 15.4}
+  ],
+  "exceptionFacets": [
+    {"value": "NullPointerException", "count": 140, "percentage": 9.2}
+  ],
+  "loggerFacets": [...],
+  "userFacets": [...],
+  "fileFacets": [...],
+  "timelineHourly": {
+    "2026-03-12T14:00:00Z": 45,
+    "2026-03-12T15:00:00Z": 67
+  },
+  "timelineByLevel": {
+    "2026-03-12T14:00:00Z": {"ERROR": 10, "WARN": 20, "INFO": 15}
+  },
+  "detectedPatterns": [
+    "Spike detected at 15:00 (3x average)",
+    "NullPointerException in EvidenceProcessor (140), WorkflowEngine (100)"
+  ]
+}
+```
+
+---
+
+### 5. Get Log Context
+
+**Endpoint**: `GET /api/context`
+
+**Parameters**:
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `sourceFile` | String | Yes | Log filename |
+| `lineNumber` | Long | Yes | Target line number |
+| `contextLines` | Integer | No | Lines before/after (default: 10) |
+
+**Description**: Returns surrounding log lines for context
+
+**Example Request**:
+```bash
+curl "http://localhost:8080/api/context?sourceFile=server-20260313.log&lineNumber=142&contextLines=5"
+```
+
+**Response**:
+```json
+{
+  "sourceFile": "server-20260313.log",
+  "targetLine": 142,
+  "totalLines": 5000,
+  "contextLines": [
+    {"lineNumber": 137, "content": "[13 Mar 2026...] Log line", "isTarget": false},
+    {"lineNumber": 142, "content": "[13 Mar 2026...] ERROR: NPE", "isTarget": true},
+    {"lineNumber": 147, "content": "[13 Mar 2026...] Recovery", "isTarget": false}
+  ]
+}
+```
+
+---
+
+### 2. Trigger Indexing (continued)
+
 **Example Request**:
 ```bash
 curl -X POST http://localhost:8080/api/index
@@ -1336,17 +1488,67 @@ mvn test jacoco:report
 
 ---
 
+## Frontend Features
+
+### User Interface Components
+
+The application includes a modern, responsive web interface built with vanilla JavaScript and Chart.js.
+
+**Main Tabs**:
+1. **Search Logs**: Main search interface with analytics sidebar
+2. **Download Logs**: Bulk log download functionality
+3. **Dashboards**: Custom dashboard management
+
+**Search Features**:
+- **Quick Time Range Buttons**: Last 1h, 6h, 24h, 2d, 7d
+- **Relative Time Support**: Auto-updating time ranges (stored as relative offsets)
+- **Saved Searches**: localStorage-based persistence with relative time tracking
+- **Field Highlighting**: Automatic pattern recognition and highlighting:
+  - Error keywords (red background)
+  - Java exceptions (light red)
+  - IP addresses (purple)
+  - URLs (blue)
+  - File paths (green)
+  - IDs and numbers (light blue)
+  - Timestamps (yellow)
+- **Context View**: Modal showing ±10 lines around any log entry
+- **Faceted Filters**: Click-to-filter on level, exception, logger, user, file
+
+**Dashboard Features**:
+- **CRUD Operations**: Create, read, update, delete dashboards
+- **Widget Types**:
+  - Pie charts (Log Levels Distribution)
+  - Stacked bar charts (Timeline by Level)
+  - Statistics cards (Error Count, Total Logs)
+- **localStorage Persistence**: Client-side dashboard storage
+- **Relative Time Refresh**: Dashboards auto-update for relative time ranges
+- **Dashboard-to-Search**: "View Search Results" button navigates to search tab with query/time
+- **Professional Modals**: Custom modal dialogs matching app design
+
+**Analytics Sidebar**:
+- Statistics cards (Total Results, Error Count, Unique Users, Time Span)
+- Timeline chart (hourly/daily distribution)
+- Pattern alerts (spikes, memory issues, high error rates)
+- Top-N facets (exceptions, loggers, users, files)
+
+**Technology Stack (Frontend)**:
+- Vanilla JavaScript (no frameworks)
+- Chart.js 4.4.0 for visualizations
+- CSS Grid and Flexbox for layouts
+- localStorage API for client-side persistence
+- Fetch API for REST communication
+
 ## Future Enhancements
 
 ### Potential Improvements
 
 1. **Real-time indexing**: Watch log files with `WatchService` instead of scheduled polling
 2. **Distributed search**: Support multiple log-search instances with shared index
-3. **Advanced analytics**: Log aggregations, charts, anomaly detection
-4. **Export functionality**: Export search results to CSV/JSON
-5. **Highlighting**: Show matched terms in search results
-6. **Faceted search**: Filter by user, date, log level
-7. **Performance monitoring**: Track search times, index sizes, etc.
+3. **Live tail**: WebSocket-based real-time log streaming
+4. **Export functionality**: Export search results to CSV/JSON/Excel
+5. **Share links**: Shareable URLs with filter state
+6. **Performance monitoring**: Track search times, index sizes, etc.
+7. **Alert engine**: Email/webhook notifications on patterns
 
 ---
 

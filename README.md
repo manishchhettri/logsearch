@@ -9,12 +9,19 @@ A lightweight, embedded Lucene-based log search application designed for develop
 - **Day-based indexing**: Smart partitioning by day for efficient date-range queries
 - **Fast search**: Full-text search across GBs of logs in seconds
 - **Modern UI**: Clean web interface with syntax highlighting and formatted stack traces
+- **Custom Dashboards**: Create, save, and manage dashboards with analytics widgets (pie charts, bar charts, stats)
+- **Field Highlighting**: Automatic highlighting of errors, exceptions, IPs, URLs, IDs, timestamps, and patterns
+- **Quick Time Ranges**: One-click buttons for Last 1h, 6h, 24h, 2d, 7d with auto-updating relative time
+- **Analytics & Aggregations**: Error hotspots, timeline visualization, top-N analysis, pattern detection
 - **Auto-indexing**: Automatically watches for new log files
+- **Multiple Log Format Support**: Auto-detects JSON logs, Apache/nginx access logs, and custom formats
 - **Flexible log parsing**: Support for simple 3-group and enhanced 6-group log formats (WebLogic, etc.)
 - **Multi-line support**: Properly handles stack traces and multi-line log messages
-- **Fallback parsing**: Intelligently indexes logs that don't match the primary pattern
+- **Fallback parsing**: Intelligently indexes logs that don't match the primary pattern with 5-tier detection
 - **Configurable**: Support for different log formats and timezones
 - **Retention management**: Auto-cleanup of old indexes
+- **Saved Searches**: Store and reload frequently used searches with relative time support
+- **Dashboard Drill-down**: Click from aggregate statistics to detailed search results
 
 ## Requirements
 
@@ -601,13 +608,25 @@ Both patterns support multi-line log entries (stack traces, exception details):
 
 ### Fallback Parsing
 
-If `enable-fallback: true` (default), the parser uses a 3-tier approach:
+If `enable-fallback: true` (default), the parser uses a 5-tier approach:
 
 1. **Tier 1**: Try primary configured pattern
-2. **Tier 2**: Auto-detect timestamp patterns (ISO 8601, Apache, Syslog, etc.)
-3. **Tier 3**: Use file metadata (filename date or file modified time)
+2. **Tier 2**: Auto-detect JSON format (with field extraction for timestamp, level, message, logger, thread, user)
+3. **Tier 3**: Auto-detect Apache/nginx access log format
+4. **Tier 4**: Auto-detect timestamp patterns (ISO 8601, Apache, Syslog, etc.)
+5. **Tier 5**: Use file metadata (filename date or file modified time)
 
 This ensures even non-standard log lines get indexed and are searchable.
+
+**JSON Log Example**:
+```json
+{"timestamp":"2026-03-13T15:30:00Z","level":"ERROR","message":"Database connection failed","logger":"com.example.DBHandler","user":"admin"}
+```
+
+**Apache/Nginx Log Example**:
+```
+127.0.0.1 - admin [13/Mar/2026:15:30:00 +1300] "GET /api/search HTTP/1.1" 200 1234 "-" "Mozilla/5.0"
+```
 
 ### Customizing for Different Formats
 
