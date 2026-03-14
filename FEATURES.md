@@ -1,182 +1,268 @@
-# Log Search - Features & Roadmap
+# LogSearch – Feature Overview
 
-## Implemented Features
+This document describes the major capabilities of **LogSearch**, a lightweight log investigation platform designed to enable fast search and analysis of archived log files.
 
-### Core Search Capabilities
-- ✅ Full-text search across all log fields with Lucene
-- ✅ Date range filtering with day-based index partitioning
-- ✅ Advanced pagination (configurable page size up to 1000)
-- ✅ Code-aware search (Java class names, stack traces, method names)
-- ✅ Formatted stack trace display with proper line breaks
-- ✅ Manual re-indexing (incremental and full re-index options)
-- ✅ Modern web UI with responsive design
-- ✅ Boolean operators (AND, OR, NOT)
-- ✅ Wildcards and phrase searches
-- ✅ Field-specific searches (level:ERROR, user:admin, etc.)
-
-### Analytics & Insights 
-- ✅ **Error Hotspots** - Automatic grouping by exception type, component, user
-- ✅ **Timeline Visualization** - Hourly/daily error distribution with spike detection
-- ✅ **Top N Analysis** - Most affected components, users, files with percentages
-- ✅ **Pattern Detection** - Auto-detect memory leaks, retry loops, deployment issues
-- ✅ **Aggregations API** - Multi-facet aggregation (level, exception, logger, user, file)
-- ✅ **Statistics Cards** - Total logs, errors, warnings, top exceptions
-
-### Advanced Search 
-- ✅ **Faceted Filters** - Dynamic left-sidebar filters (click to refine)
-- ✅ **Context View** - See surrounding logs before/after a specific entry
-- ✅ **Field Highlighting** - Automatic highlighting of errors, exceptions, IPs, URLs, timestamps, paths, IDs
-
-### Productivity Features
-- ✅ **Saved Searches** - Persist and reload common queries with relative time support
-- ✅ **Custom Dashboards** - Create, save, and manage dashboards with analytics widgets
-- ✅ **Dashboard Widgets** - Pie charts, stacked bar charts, statistics cards
-- ✅ **Dashboard Drill-down** - Navigate from aggregated stats to detailed search results
-- ✅ **Relative Time Ranges** - Auto-updating time windows (Last 1h, 6h, 24h, 2d, 7d)
-- ✅ **Quick Time Buttons** - One-click time range selection
-- ✅ **Bulk Download** - Download logs from multiple URLs/paths simultaneously (up to 5)
-- ✅ **Export** - Export search results to various formats
-
-### Log Format Support 
-- ✅ **Multi-Format Parsing** - 5-tier fallback strategy
-- ✅ **JSON Logs** - Auto-detection and field extraction
-- ✅ **Apache/Nginx Logs** - Access log format support
-- ✅ **Custom Patterns** - Configurable regex patterns (3-group and 6-group)
-- ✅ **Multi-line Support** - Properly handles stack traces and multi-line messages
-- ✅ **Smart Continuation** - Automatic detection of continuation lines
-- ✅ **Timestamp Auto-detection** - Supports ISO 8601, Apache, Syslog, and custom formats
-
-### Operations & Management
-- ✅ **Auto-indexing** - Automatically watches for new log files
-- ✅ **Retention Management** - Auto-cleanup of old indexes
-- ✅ **Configurable Settings** - External YAML configuration without rebuild
-- ✅ **REST API** - Full programmatic access for automation
-- ✅ **Status Endpoint** - Monitor indexing progress and health
-- ✅ **Single JAR Deployment** - No external dependencies
+LogSearch focuses on providing developers with efficient tools for investigating application behaviour after logs have been removed from centralized observability platforms such as Splunk.
 
 ---
 
-## Implementation Timeline
+# 1. High Performance Log Search
 
-### Phase 1 - Analytics Foundation ✅ COMPLETED
-- ✅ Aggregation API endpoint (`/api/aggregations`)
-- ✅ Multi-facet aggregation (level, exception, logger, user, file)
-- ✅ Hourly timeline generation
-- ✅ Quick filters (faceted sidebar)
-- ✅ Error hotspots UI
-- ✅ Timeline visualization with Chart.js
-- ✅ Pattern detection engine with spike detection
-- ✅ Exception tracking by class (top 3 affected classes)
-- ✅ Top-N analysis with percentages
+LogSearch uses **Apache Lucene** to provide fast full-text search across large volumes of log data.
 
-### Phase 2 - Enhanced UX ✅ COMPLETED
-- ✅ Context view (see logs before/after)
-- ✅ Saved searches with relative time support
-- ✅ Dashboards with widgets and drill-down
-- ✅ Field highlighting (errors, exceptions, IPs, URLs, etc.)
-- ✅ Responsive sidebar with faceted filters
-- ✅ Custom dashboards tab with CRUD operations
-- ✅ Dashboard widgets (pie charts, bar charts, statistics)
-- ✅ Quick time range buttons
-- ✅ Dashboard-to-search navigation
+After logs are indexed, queries execute in milliseconds even when searching across gigabytes of log files.
 
-### Phase 3 - Real-time & Advanced Patterns (Planned)
-- ⚙️ **Live Tail** - Real-time log streaming (WebSocket)
-- ⚙️ **Auto-refresh** - Periodic search updates
-- ⚙️ **Advanced Pattern Detection** - More sophisticated anomaly detection
-- ⚙️ **Trend Analysis** - Error rate changes over time
-- ⚙️ **Related Logs** - Find logs from same session/user/request
-- ⚙️ **Smart Suggestions** - Query auto-complete based on indexed data
+Supported search capabilities include:
 
-### Phase 4 - Alerting & Collaboration (Future)
-- ⚙️ **Custom Alerts** - Email/webhook when conditions met
-- ⚙️ **Threshold Alerts** - Notify on error rate spikes
-- ⚙️ **Pattern Alerts** - Detect and alert on specific patterns
-- ⚙️ **Scheduled Reports** - Daily/weekly error summaries
-- ⚙️ **Share Links** - Shareable URLs with filter state
-- ⚙️ **Integration Hooks** - Slack, Teams, PagerDuty, etc.
-- ⚙️ **Advanced Export** - JSON, Excel, formatted reports
+• keyword search
+• phrase search
+• boolean queries
+• partial matches
+• error pattern lookup
 
-### Phase 5 - Enterprise Features (Future Consideration)
-- ⚙️ **Multi-user Support** - User accounts and permissions
-- ⚙️ **Team Collaboration** - Share searches and dashboards
-- ⚙️ **Audit Logging** - Track who searched what
-- ⚙️ **SSO Integration** - LDAP, SAML, OAuth
-- ⚙️ **Role-based Access** - Granular permissions
+Example queries:
+
+```
+NullPointerException
+database timeout
+payment AND failed
+"connection refused"
+```
 
 ---
 
-## Current Status: Phase 1 & 2 Complete ✅
+# 2. Intelligent Log Indexing
 
-### Verified & Working (as of March 14, 2026)
+LogSearch converts raw log files into optimized search indexes.
 
-**Backend:**
-- ✅ Aggregations API endpoint (`/api/aggregations`)
-- ✅ Multi-facet aggregation (level, exception, logger, user, file)
-- ✅ Hourly timeline generation (tested with 263 hourly data points)
-- ✅ Pattern detection engine:
-  - Spike detection (3x average threshold)
-  - Exception tracking by class (shows top 3 affected classes with counts)
-  - Memory issue detection with class-level detail
-  - Automatically filters out framework classes (java.*, org.springframework.*, etc.)
-- ✅ Top-N analysis with percentages
-- ✅ Exception type and class extraction from stack traces
-- ✅ Context API endpoint (`/api/context`)
-- ✅ Full re-index functionality (incremental and full)
+During indexing:
 
-**Frontend:**
-- ✅ Responsive sidebar with faceted filters
-- ✅ Analytics dashboard with stats cards
-- ✅ Timeline chart (Chart.js integration)
-- ✅ Pattern alerts with severity levels
-- ✅ Click-to-filter facet interaction
-- ✅ Toggle analytics visibility
-- ✅ Custom Dashboards tab with CRUD operations
-- ✅ Dashboard widgets (pie charts, stacked bar charts, statistics)
-- ✅ Field highlighting for errors, exceptions, IPs, URLs, timestamps, paths, IDs
-- ✅ Saved searches with localStorage persistence
-- ✅ Quick time range buttons (Last 1h, 6h, 24h, 2d, 7d)
-- ✅ Relative time support with auto-refresh
-- ✅ Context view modal showing surrounding log lines
-- ✅ Dashboard-to-search drill-down navigation
-- ✅ Re-index modal with full re-index checkbox
+• log timestamps are extracted
+• multi-line entries are merged
+• stack traces are preserved
+• log metadata is stored for fast filtering
 
-**Multi-Format Log Parsing:**
-- ✅ JSON log format detection and field extraction
-- ✅ Apache/nginx access log format support
-- ✅ 5-tier fallback parsing strategy
-- ✅ Auto-detection of common timestamp formats
-- ✅ Multi-line stack trace handling
-
-**Tested & Verified:**
-- ✅ API returns correct aggregations (tested with 7,665+ logs)
-- ✅ Timeline generates accurate hourly data points
-- ✅ Pattern detection with class-level detail
-- ✅ UI loads with all components
-- ✅ Async aggregations don't block search results (~0.6s independent load time)
-- ✅ Dashboards with relative time auto-refresh
-- ✅ Field highlighting across all log message types
-- ✅ Dashboard-to-search navigation preserves query and time context
-- ✅ JSON and Apache log formats correctly parsed and indexed
-- ✅ Full re-index deletes and rebuilds all indexes
+This enables accurate search results while maintaining the context of each log event.
 
 ---
 
-## Design Philosophy
+# 3. Multi-Line Log Event Handling
 
-This is a **free, open-source tool** designed for developers who need:
-- Fast, local log analysis without cloud dependencies
-- Splunk-like features without enterprise pricing
-- Self-hosted solution with complete data privacy
-- Single JAR deployment with zero external services
-- Code-aware search optimized for Java applications
+Many application logs contain multi-line entries such as Java stack traces.
 
-**All features are and will remain free and open source.**
+LogSearch detects and groups these entries into a **single searchable event** rather than treating each line independently.
+
+Example:
+
+```
+ERROR PaymentService failed
+java.lang.NullPointerException
+    at com.company.payment.Service.process(Service.java:45)
+    at com.company.controller.PaymentController.execute()
+```
+
+This entire block becomes **one indexed log event**.
 
 ---
 
-## Contributing
+# 4. Time-Based Filtering
 
-Feature requests and contributions welcome! See the roadmap above for planned features.
+Logs can be filtered by date and time to narrow search results.
 
-If you'd like to contribute to Phase 3, 4, or 5 features, please open an issue to discuss the approach first.
+Supported capabilities:
+
+• exact time range filtering
+• day-based filtering
+• quick time window selection
+
+Example:
+
+```
+Search logs between:
+2026-03-12 10:00
+and
+2026-03-12 12:00
+```
+
+Time filtering significantly improves search performance when analyzing large datasets.
+
+---
+
+# 5. Contextual Log Viewing
+
+When a log event is selected, LogSearch provides surrounding log context.
+
+This allows developers to see what occurred immediately before and after the event.
+
+Example view:
+
+```
+Previous log entries
+Target log entry
+Following log entries
+```
+
+This is particularly useful when investigating failures or system behaviour leading up to an error.
+
+---
+
+# 6. Incremental Log Indexing
+
+LogSearch supports incremental indexing of new log files.
+
+Only new or updated logs are processed, avoiding unnecessary re-indexing of existing data.
+
+Benefits:
+
+• faster indexing
+• reduced CPU usage
+• efficient log ingestion
+
+---
+
+# 7. Full Index Rebuild
+
+When necessary, LogSearch can rebuild the entire index from scratch.
+
+This may be useful when:
+
+• log formats change
+• parsing rules are updated
+• corrupted indexes need recovery
+
+---
+
+# 8. Log Analytics and Aggregation
+
+LogSearch can produce simple analytics from indexed logs, including:
+
+• error frequency
+• warning frequency
+• log distribution over time
+• event counts by type
+
+These summaries provide quick insight into system behaviour.
+
+---
+
+# 9. Dashboard View
+
+The dashboard provides a high-level overview of system log activity.
+
+Typical metrics include:
+
+• total log events
+• error distribution
+• time-based event trends
+
+This helps teams quickly identify unusual activity patterns.
+
+---
+
+# 10. Saved Searches
+
+Developers can save commonly used queries for quick reuse.
+
+Examples:
+
+```
+Database connection errors
+Authentication failures
+Payment processing issues
+```
+
+Saved searches simplify repeated investigations.
+
+---
+
+# 11. Bulk Result Export
+
+Search results can be exported for offline analysis or collaboration.
+
+Supported capabilities:
+
+• export matched log events
+• export filtered log sets
+• share logs with other team members
+
+---
+
+# 12. Large Log File Support
+
+LogSearch is designed to handle large log archives.
+
+Typical capabilities include:
+
+• indexing multi-GB log files
+• searching across multiple files
+• efficient disk-based indexing
+
+---
+
+# 13. Lightweight Deployment
+
+LogSearch runs as a **single standalone Java application**.
+
+No additional services are required.
+
+Deployment characteristics:
+
+• no database required
+• no external search cluster
+• minimal configuration
+• portable execution
+
+---
+
+# 14. Flexible Log Source Support
+
+LogSearch can index logs from multiple sources including:
+
+• application server logs
+• microservice logs
+• archived log directories
+• downloaded production logs
+
+---
+
+# 15. Developer-Oriented Workflow
+
+LogSearch is designed to support the typical developer investigation workflow:
+
+```
+Download archived logs
+Index logs locally
+Search quickly
+View stack traces
+Investigate root cause
+```
+
+This workflow dramatically reduces the time required to analyze historical incidents.
+
+---
+
+# 16. Cost-Effective Historical Log Investigation
+
+LogSearch enables teams to maintain access to historical logs without the high cost of long-term centralized log retention.
+
+This allows organizations to:
+
+• reduce Splunk storage costs
+• maintain searchable log archives
+• empower developers to perform independent investigations
+
+---
+
+# Summary
+
+LogSearch provides a lightweight yet powerful platform for searching archived logs.
+
+Key strengths include:
+
+• fast Lucene-based search
+• stack trace awareness
+• time-based filtering
+• contextual event viewing
+• minimal infrastructure requirements
+
+It complements centralized observability platforms by enabling **efficient investigation of historical log data**.
