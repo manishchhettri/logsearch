@@ -47,20 +47,40 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Web Browser / API Client                  │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐                  │
+│  │  Search    │  │  Download  │  │ Dashboards │                  │
+│  │   Tab      │  │    Tab     │  │    Tab     │                  │
+│  └────────────┘  └────────────┘  └────────────┘                  │
+│  • Saved Searches • Field Highlighting • Analytics Sidebar        │
 └───────────────────────────────┬─────────────────────────────────┘
                                 │
-                                │ HTTP REST
+                                │ HTTP REST / Fetch API
                                 │
 ┌───────────────────────────────▼─────────────────────────────────┐
 │                      LogSearchController                          │
 │                     (REST API Layer)                              │
-└───────────┬─────────────────────────────────┬───────────────────┘
-            │                                 │
-            │ /api/search                     │ /api/index
-            │                                 │
-┌───────────▼────────────────┐    ┌──────────▼───────────────────┐
+│  /api/search  /api/aggregations  /api/context                    │
+│  /api/index   /api/download      /api/status                     │
+└──┬────────────┬────────────┬────────────┬────────────────────────┘
+   │            │            │            │
+   │            │            │            │ /api/download
+   │            │            │            │
+   │            │            │      ┌─────▼──────────────────┐
+   │            │            │      │ LogDownloadService     │
+   │            │            │      │ (Bulk Download)        │
+   │            │            │      └────────────────────────┘
+   │            │            │
+   │            │            │ /api/context
+   │            │            │ (Read log file for context)
+   │            │            │
+   │            │ /api/aggregations
+   │            │ (Multi-facet analysis)
+   │            │
+   │ /api/search
+   │
+┌──▼────────────▼────────────┐    ┌──────────▼───────────────────┐
 │   LogSearchService         │    │    LogFileIndexer            │
-│   (Search Logic)           │    │    (File Watching)           │
+│   (Search & Analytics)     │    │    (File Watching)           │
 └───────────┬────────────────┘    └──────────┬───────────────────┘
             │                                 │
             │ Query day indexes              │ Parse & index logs
@@ -68,6 +88,8 @@
 ┌───────────▼─────────────────────────────────▼───────────────────┐
 │                    LuceneIndexService                             │
 │              (Index Management & Storage)                         │
+│   • Day-based partitioning  • CodeAnalyzer tokenization          │
+│   • Retention management    • Full re-index support              │
 └───────────────────────────────┬─────────────────────────────────┘
                                 │
                                 │ Read/Write
@@ -145,10 +167,12 @@ com.lsearch.logsearch/
 │   └── Facet.java                     # Facet model (value, count, percentage)
 │
 └── service/
+    ├── CodeAnalyzer.java              # Custom Lucene analyzer for code-aware tokenization
     ├── LogParser.java                 # Parses log lines into LogEntry objects
     ├── LuceneIndexService.java        # Manages Lucene IndexWriters per day
     ├── LogFileIndexer.java            # Watches log files and triggers indexing
-    └── LogSearchService.java          # Executes searches across day indexes
+    ├── LogSearchService.java          # Executes searches across day indexes
+    └── LogDownloadService.java        # Handles bulk log file/URL downloads
 ```
 
 ---
@@ -693,7 +717,59 @@ private void indexFile(Path filePath) {
 
 ---
 
-### 11. LogSearchService.java
+### 11. LogDownloadService.java
+**Package**: `com.lsearch.logsearch.service`
+**Type**: Service
+
+**Responsibilities**:
+- Downloads log files from URLs or file paths
+- Supports concurrent downloads (up to 5 simultaneous)
+- Auto-detects directories and recursively downloads .log files
+- Copies files to local logs directory for indexing
+- Provides download progress and error reporting
+
+**Key Features**:
+```java
+@Service
+public class LogDownloadService {
+    private static final int MAX_CONCURRENT_DOWNLOADS = 5;
+
+    public Map<String, String> downloadLogs(List<String> sources) {
+        // Download from URLs or local paths
+        // Auto-detect directories vs files
+        // Handle HTTP/HTTPS and file:// protocols
+        // Copy to logs directory
+        // Return status for each source
+    }
+}
+```
+
+**Download Sources**:
+- **HTTP/HTTPS URLs**: Downloads remote log files
+- **File paths**: Copies local log files or directories
+- **Directory detection**: Recursively finds *.log files
+
+**Example Usage**:
+```java
+List<String> sources = Arrays.asList(
+    "https://server.com/logs/app-20260313.log",
+    "/mnt/remote/logs/",  // Copies all .log files from directory
+    "file:///var/log/myapp.log"
+);
+
+Map<String, String> results = downloadService.downloadLogs(sources);
+// Returns: {"https://server.com/...": "SUCCESS", "/mnt/remote/logs/": "SUCCESS: 5 files"}
+```
+
+**Error Handling**:
+- Network errors: Returns error message for that URL
+- File not found: Returns "NOT FOUND"
+- Permission errors: Returns "ACCESS DENIED"
+- Continues downloading other sources even if one fails
+
+---
+
+### 12. LogSearchService.java
 **Package**: `com.lsearch.logsearch.service`
 **Type**: Service
 
@@ -1169,7 +1245,68 @@ curl "http://localhost:8080/api/context?sourceFile=server-20260313.log&lineNumbe
 
 ---
 
-### 2. Trigger Indexing (continued)
+### 6. Download Logs
+
+**Endpoint**: `POST /api/download`
+
+**Request Body**:
+```json
+{
+  "urls": [
+    "https://server.com/logs/app-20260313.log",
+    "/mnt/remote/logs/",
+    "file:///var/log/myapp.log",
+    "https://server.com/logs/directory/",
+    "/local/path/to/logs"
+  ]
+}
+```
+
+**Parameters**:
+- `urls`: Array of URLs or file paths (max 5)
+- Supports HTTP/HTTPS URLs and local file paths
+- Auto-detects directories and recursively downloads .log files
+
+**Description**: Downloads log files from multiple sources concurrently
+
+**Example Request**:
+```bash
+curl -X POST http://localhost:8080/api/download \
+  -H "Content-Type: application/json" \
+  -d '{
+    "urls": [
+      "https://logs.example.com/app.log",
+      "/mnt/logs/server/"
+    ]
+  }'
+```
+
+**Response**:
+```json
+{
+  "https://logs.example.com/app.log": "SUCCESS",
+  "/mnt/logs/server/": "SUCCESS: 12 files copied"
+}
+```
+
+**Error Response** (partial failure):
+```json
+{
+  "https://logs.example.com/app.log": "SUCCESS",
+  "/mnt/logs/server/": "ERROR: Access denied"
+}
+```
+
+**Features**:
+- Concurrent downloads (up to 5 simultaneous)
+- Auto-detection of directories vs files
+- Recursive .log file discovery in directories
+- Downloads to `logs-dir` configured location
+- Automatic triggering of indexing after download
+
+---
+
+### 7. Trigger Indexing (continued)
 
 **Example Request**:
 ```bash
@@ -1564,24 +1701,144 @@ The application includes a modern, responsive web interface built with vanilla J
 - Pattern alerts (spikes, memory issues, high error rates)
 - Top-N facets (exceptions, loggers, users, files)
 
+**Download Tab**:
+- **Bulk Download**: Enter up to 5 URLs or file paths
+- **Auto-Detection**: Automatically detects directories and downloads all .log files
+- **Concurrent Processing**: Downloads up to 5 sources simultaneously
+- **Progress Feedback**: Real-time status for each download
+- **Supported Sources**:
+  - HTTP/HTTPS URLs (individual files)
+  - HTTP/HTTPS URLs (directories - auto-detects .log files)
+  - Local file paths
+  - Local directories (recursive .log discovery)
+
+**Saved Searches Architecture**:
+```javascript
+{
+  name: "Errors Last Hour",
+  query: "level:ERROR",
+  isRelative: true,  // Indicates relative time range
+  relativeValue: 1,  // Numeric value
+  relativeUnit: "hours",  // hours, days
+  createdAt: "2026-03-14T10:30:00Z"
+}
+```
+
+**Dashboard Data Model**:
+```javascript
+{
+  id: "dash_1234567890",
+  name: "Production Errors",
+  query: "level:ERROR AND server:prod",
+  isRelative: true,
+  relativeValue: 24,
+  relativeUnit: "hours",
+  widgets: [
+    {type: "pie", field: "level", title: "Log Levels"},
+    {type: "bar", field: "timeline", title: "Errors Over Time"},
+    {type: "stat", field: "totalErrors", title: "Total Errors"}
+  ],
+  createdAt: "2026-03-14T10:30:00Z"
+}
+```
+
+**Client-Side State Management**:
+- **localStorage Keys**:
+  - `savedSearches`: Array of saved search objects
+  - `dashboards`: Array of dashboard objects
+  - `lastSearch`: Most recent search parameters
+  - `preferences`: UI preferences (theme, default time range, etc.)
+
+**Chart.js Integration**:
+```javascript
+// Pie Chart (Log Levels Distribution)
+new Chart(ctx, {
+  type: 'pie',
+  data: {
+    labels: facets.map(f => f.value),
+    datasets: [{
+      data: facets.map(f => f.count),
+      backgroundColor: ['#f56565', '#ed8936', '#48bb78', '#4299e1']
+    }]
+  }
+});
+
+// Stacked Bar Chart (Timeline by Level)
+new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: hours,
+    datasets: [
+      {label: 'ERROR', data: errorCounts, backgroundColor: '#f56565'},
+      {label: 'WARN', data: warnCounts, backgroundColor: '#ed8936'},
+      {label: 'INFO', data: infoCounts, backgroundColor: '#48bb78'}
+    ]
+  },
+  options: {scales: {x: {stacked: true}, y: {stacked: true}}}
+});
+```
+
+**Field Highlighting Patterns**:
+```javascript
+const patterns = [
+  {regex: /\b(error|exception|fail|fatal)\b/gi, class: 'error'},
+  {regex: /\b([A-Z][a-z]+Exception|Error)\b/g, class: 'exception'},
+  {regex: /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, class: 'ip'},
+  {regex: /https?:\/\/[^\s]+/g, class: 'url'},
+  {regex: /\/[^\s]*\.(log|java|xml|properties)/g, class: 'path'},
+  {regex: /\b(id|ID|uuid|UUID):\s*[a-zA-Z0-9-]+/g, class: 'id'},
+  {regex: /\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}/g, class: 'timestamp'}
+];
+```
+
+**Relative Time Calculation**:
+```javascript
+function calculateTimeRange(saved) {
+  if (!saved.isRelative) {
+    return {startTime: saved.startTime, endTime: saved.endTime};
+  }
+
+  const now = new Date();
+  const startTime = new Date(now);
+
+  if (saved.relativeUnit === 'hours') {
+    startTime.setHours(now.getHours() - saved.relativeValue);
+  } else if (saved.relativeUnit === 'days') {
+    startTime.setDate(now.getDate() - saved.relativeValue);
+  }
+
+  return {startTime: startTime.toISOString(), endTime: now.toISOString()};
+}
+```
+
+**Dashboard Refresh Logic**:
+- Dashboards with relative time ranges auto-refresh every time they're viewed
+- Absolute time ranges remain static
+- Query and time parameters passed to search tab via URL state
+
 **Technology Stack (Frontend)**:
 - Vanilla JavaScript (no frameworks)
 - Chart.js 4.4.0 for visualizations
 - CSS Grid and Flexbox for layouts
 - localStorage API for client-side persistence
 - Fetch API for REST communication
+- Modern CSS (CSS Variables, Transitions, Flexbox, Grid)
+- Responsive design (mobile-friendly layouts)
 
 ## Future Enhancements
 
-### Potential Improvements
+### Potential Improvements (Phase 3+)
 
 1. **Real-time indexing**: Watch log files with `WatchService` instead of scheduled polling
-2. **Distributed search**: Support multiple log-search instances with shared index
-3. **Live tail**: WebSocket-based real-time log streaming
-4. **Export functionality**: Export search results to CSV/JSON/Excel
-5. **Share links**: Shareable URLs with filter state
-6. **Performance monitoring**: Track search times, index sizes, etc.
-7. **Alert engine**: Email/webhook notifications on patterns
+2. **Live tail**: WebSocket-based real-time log streaming
+3. **Auto-refresh**: Periodic search updates for monitoring dashboards
+4. **Advanced export**: Export search results to CSV/JSON/Excel formats
+5. **Share links**: Shareable URLs with encoded filter state
+6. **Performance monitoring**: Track search times, index sizes, query patterns
+7. **Alert engine**: Email/webhook notifications on pattern detection
+8. **Query auto-complete**: Suggest field names and values based on indexed data
+9. **Distributed search**: Support multiple log-search instances with shared index
+10. **Related logs**: Find logs from same session/user/request ID
 
 ---
 
