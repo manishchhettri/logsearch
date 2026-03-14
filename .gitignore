@@ -37,6 +37,11 @@ build/
 *.log
 logs/
 test-logs-server/
+app.log
+app-output.log
+test-run.log
+test-*.html
+nohup.out
 
 ### Lucene indexes ###
 .log-search/

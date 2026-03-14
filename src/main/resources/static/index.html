@@ -95,6 +95,89 @@
             flex-shrink: 0;
         }
 
+        /* Pattern Fingerprinting Styles */
+        .pattern-item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 12px;
+        }
+
+        .pattern-item:hover {
+            background: #fff8e1;
+            border-color: #ffc107;
+        }
+
+        .pattern-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .pattern-text {
+            flex: 1;
+            color: #495057;
+            line-height: 1.4;
+            word-break: break-word;
+            font-size: 11px;
+        }
+
+        .pattern-badge {
+            background: #ffc107;
+            color: #333;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 700;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        .pattern-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 10px;
+            color: #6c757d;
+            padding-top: 4px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .pattern-percentage {
+            font-weight: 600;
+        }
+
+        .pattern-level {
+            background: #e3f2fd;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9px;
+            font-weight: 600;
+        }
+
+        .pattern-level.ERROR {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .pattern-level.WARN {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .pattern-level.INFO {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
         .container {
             background: white;
             padding: 30px;
@@ -1378,6 +1461,69 @@
             const container = document.getElementById('facetsContainer');
             container.innerHTML = '';
 
+            // Display Pattern Summaries (Fingerprinting) at the top
+            if (agg.patternSummaries && agg.patternSummaries.length > 0) {
+                const patternGroup = document.createElement('div');
+                patternGroup.className = 'facet-group';
+
+                const title = document.createElement('h3');
+                title.textContent = '🎯 TOP ERROR PATTERNS';
+                title.style.color = '#d97706';
+                patternGroup.appendChild(title);
+
+                agg.patternSummaries.slice(0, 10).forEach((pattern, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'pattern-item';
+
+                    const header = document.createElement('div');
+                    header.className = 'pattern-header';
+
+                    const patternText = document.createElement('div');
+                    patternText.className = 'pattern-text';
+                    patternText.textContent = pattern.pattern.length > 80
+                        ? pattern.pattern.substring(0, 80) + '...'
+                        : pattern.pattern;
+                    patternText.title = pattern.pattern;
+
+                    const badge = document.createElement('span');
+                    badge.className = 'pattern-badge';
+                    badge.textContent = `×${pattern.count}`;
+
+                    header.appendChild(patternText);
+                    header.appendChild(badge);
+
+                    const meta = document.createElement('div');
+                    meta.className = 'pattern-meta';
+
+                    const percentage = document.createElement('span');
+                    percentage.className = 'pattern-percentage';
+                    percentage.textContent = `${pattern.percentage.toFixed(1)}%`;
+
+                    meta.appendChild(percentage);
+
+                    if (pattern.level) {
+                        const level = document.createElement('span');
+                        level.className = `pattern-level ${pattern.level}`;
+                        level.textContent = pattern.level;
+                        meta.appendChild(level);
+                    }
+
+                    item.appendChild(header);
+                    item.appendChild(meta);
+
+                    // Click to search for this pattern
+                    item.onclick = () => {
+                        document.getElementById('query').value = pattern.sampleMessage || pattern.pattern;
+                        performSearch();
+                    };
+
+                    patternGroup.appendChild(item);
+                });
+
+                container.appendChild(patternGroup);
+            }
+
+            // Regular facets
             const facetGroups = [
                 { title: 'Log Level', facets: agg.levelFacets, type: 'level' },
                 { title: 'Exception Type', facets: agg.exceptionFacets, type: 'exception' },
@@ -1802,6 +1948,10 @@
             // Escape HTML first
             let highlighted = escapeHtml(message);
 
+            // Use placeholder approach to avoid regex matching our own HTML tags
+            const replacements = [];
+            let placeholderIndex = 0;
+
             // Define highlighting patterns (order matters - most specific first)
             const patterns = [
                 // Java exceptions (before general error keywords)
@@ -1824,9 +1974,9 @@
                     regex: /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g,
                     className: 'highlight-url'
                 },
-                // File paths (Unix and Windows)
+                // File paths (Unix and Windows) - but NOT our span tags
                 {
-                    regex: /(?:\/[\w\-\.]+)+\/?|[A-Z]:\\(?:[\w\-\.]+\\)*[\w\-\.]+/g,
+                    regex: /(?:\/[\w\-\.]+){2,}\/?|[A-Z]:\\(?:[\w\-\.]+\\)*[\w\-\.]+/g,
                     className: 'highlight-path'
                 },
                 // IDs (common patterns: ID: value, customerId: value, etc.)
@@ -1846,11 +1996,22 @@
                 }
             ];
 
-            // Apply each pattern
+            // Apply each pattern using placeholders
             patterns.forEach(pattern => {
                 highlighted = highlighted.replace(pattern.regex, (match) => {
-                    return `<span class="${pattern.className}">${match}</span>`;
+                    const placeholder = `__HIGHLIGHT_${placeholderIndex}__`;
+                    replacements.push({
+                        placeholder: placeholder,
+                        html: `<span class="${pattern.className}">${match}</span>`
+                    });
+                    placeholderIndex++;
+                    return placeholder;
                 });
+            });
+
+            // Replace all placeholders with actual HTML
+            replacements.forEach(replacement => {
+                highlighted = highlighted.replace(replacement.placeholder, replacement.html);
             });
 
             return highlighted;

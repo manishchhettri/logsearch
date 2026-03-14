@@ -64,6 +64,12 @@ public class AggregationResult {
      */
     private List<String> detectedPatterns;
 
+    /**
+     * Pattern-based aggregation (log fingerprinting)
+     * Top patterns with counts
+     */
+    private List<PatternSummary> patternSummaries;
+
     public AggregationResult() {
     }
 
@@ -80,6 +86,14 @@ public class AggregationResult {
         this.timelineHourly = timelineHourly;
         this.timelineByLevel = timelineByLevel;
         this.detectedPatterns = detectedPatterns;
+    }
+
+    public List<PatternSummary> getPatternSummaries() {
+        return patternSummaries;
+    }
+
+    public void setPatternSummaries(List<PatternSummary> patternSummaries) {
+        this.patternSummaries = patternSummaries;
     }
 
     public long getTotalHits() {
@@ -168,6 +182,7 @@ public class AggregationResult {
         private Map<String, Long> timelineHourly;
         private Map<String, Map<String, Long>> timelineByLevel;
         private List<String> detectedPatterns;
+        private List<PatternSummary> patternSummaries;
 
         public Builder totalHits(long totalHits) {
             this.totalHits = totalHits;
@@ -214,9 +229,16 @@ public class AggregationResult {
             return this;
         }
 
+        public Builder patternSummaries(List<PatternSummary> patternSummaries) {
+            this.patternSummaries = patternSummaries;
+            return this;
+        }
+
         public AggregationResult build() {
-            return new AggregationResult(totalHits, levelFacets, exceptionFacets, loggerFacets,
+            AggregationResult result = new AggregationResult(totalHits, levelFacets, exceptionFacets, loggerFacets,
                     userFacets, fileFacets, timelineHourly, timelineByLevel, detectedPatterns);
+            result.setPatternSummaries(patternSummaries);
+            return result;
         }
     }
 }

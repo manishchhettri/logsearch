@@ -17,10 +17,12 @@ log-search:
   # Log line pattern (regex - supports 3-group or 6-group patterns)
   # 3-group: (timestamp)(user)(message)
   # 6-group: (timestamp)(thread)(level)(logger)(user)(message)
-  log-line-pattern: "^\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*(.*)$"
+  # Current: 6-group pattern for WebLogic-style logs with nested brackets in thread field
+  log-line-pattern: "^\\[([^\\]]+)\\]\\s+\\[(.+?)\\]\\s+\\[([A-Z]+)\\s*\\]\\s+\\[([^\\]]+)\\]\\s+\\[\\]\\s+\\[user:([^\\]]+)\\]\\s+-\\s+(.*)$"
 
   # Date format in log lines (Java DateTimeFormatter pattern)
-  log-datetime-format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
+  # Updated for format: 13 Mar 2026 17:19:25,027
+  log-datetime-format: "dd MMM yyyy HH:mm:ss,SSS"
 
   # Timezone for parsing logs
   timezone: "Pacific/Auckland"
@@ -29,11 +31,19 @@ log-search:
   retention-days: 30
 
   # Auto-watch for new log files
-  auto-watch: true
+  # Set to false to disable automatic scanning (use "Re-Index" button in UI instead)
+  # Recommended: false for most users to reduce background CPU usage
+  auto-watch: false
 
-  # Watch interval in seconds
+  # Watch interval in seconds (only applies if auto-watch is true)
+  # Default: 60 (check every minute)
+  # Recommended: 3600 (check every hour) or disable auto-watch entirely
   watch-interval: 60
 
 logging:
   level:
+    # Application logging level: ERROR, WARN, INFO, DEBUG, TRACE
+    # INFO: Show all operations (default, verbose)
+    # WARN: Only show warnings and errors (recommended for quiet operation)
+    # ERROR: Only show errors (minimal logging)
     com.lsearch.logsearch: INFO

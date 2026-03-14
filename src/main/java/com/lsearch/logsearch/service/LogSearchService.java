@@ -4,6 +4,7 @@ import com.lsearch.logsearch.config.LogSearchProperties;
 import com.lsearch.logsearch.model.AggregationResult;
 import com.lsearch.logsearch.model.Facet;
 import com.lsearch.logsearch.model.LogEntry;
+import com.lsearch.logsearch.model.PatternSummary;
 import com.lsearch.logsearch.model.SearchResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -311,6 +312,9 @@ public class LogSearchService {
         Map<String, Long> timelineHourly = new LinkedHashMap<>();
         Map<String, Map<String, Long>> timelineByLevel = new LinkedHashMap<>();
 
+        // Pattern fingerprinting data
+        Map<String, PatternData> patternCounts = new HashMap<>();
+
         long totalHits = 0;
         List<LogEntry> allEntries = new ArrayList<>();
 
@@ -388,6 +392,24 @@ public class LogSearchService {
                         fileCounts.merge(sourceFile, 1L, Long::sum);
                     }
 
+                    // Aggregate by pattern (fingerprinting)
+                    String pattern = doc.get("pattern");
+                    if (pattern != null && !pattern.isEmpty()) {
+                        PatternData patternData = patternCounts.computeIfAbsent(pattern,
+                            k -> new PatternData(pattern));
+                        patternData.incrementCount();
+
+                        // Store sample message if not set
+                        if (patternData.getSampleMessage() == null) {
+                            patternData.setSampleMessage(message);
+                        }
+
+                        // Track most common level for this pattern
+                        if (level != null) {
+                            patternData.addLevel(level);
+                        }
+                    }
+
                     // Build timeline with dynamic intervals
                     ZonedDateTime timestamp = entry.getTimestamp();
                     String intervalKey = getIntervalKey(timestamp, intervalUnit, intervalAmount);
@@ -415,6 +437,9 @@ public class LogSearchService {
         List<Facet> userFacets = buildFacets(userCounts, totalHits, 10);
         List<Facet> fileFacets = buildFacets(fileCounts, totalHits, 10);
 
+        // Build pattern summaries (fingerprinting)
+        List<PatternSummary> patternSummaries = buildPatternSummaries(patternCounts, totalHits, 20);
+
         // Detect patterns
         List<String> patterns = detectPatterns(allEntries, timelineHourly);
 
@@ -428,6 +453,7 @@ public class LogSearchService {
                 .timelineHourly(timelineHourly)
                 .timelineByLevel(timelineByLevel)
                 .detectedPatterns(patterns)
+                .patternSummaries(patternSummaries)
                 .build();
     }
 
@@ -444,6 +470,71 @@ public class LogSearchService {
             truncated = timestamp.withHour(0).withMinute(0).withSecond(0).withNano(0);
         }
         return truncated.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+    }
+
+    /**
+     * Build pattern summaries from pattern data (fingerprinting)
+     */
+    private List<PatternSummary> buildPatternSummaries(Map<String, PatternData> patternData, long total, int topN) {
+        return patternData.values().stream()
+                .sorted((a, b) -> Long.compare(b.getCount(), a.getCount()))
+                .limit(topN)
+                .map(data -> {
+                    double percentage = total > 0 ? (data.getCount() * 100.0 / total) : 0;
+                    return PatternSummary.builder()
+                            .pattern(data.getPattern())
+                            .count(data.getCount())
+                            .percentage(percentage)
+                            .sampleMessage(data.getSampleMessage())
+                            .level(data.getMostCommonLevel())
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Helper class to track pattern data during aggregation
+     */
+    private static class PatternData {
+        private final String pattern;
+        private long count = 0;
+        private String sampleMessage;
+        private final Map<String, Integer> levelCounts = new HashMap<>();
+
+        public PatternData(String pattern) {
+            this.pattern = pattern;
+        }
+
+        public void incrementCount() {
+            this.count++;
+        }
+
+        public void addLevel(String level) {
+            levelCounts.merge(level, 1, Integer::sum);
+        }
+
+        public String getPattern() {
+            return pattern;
+        }
+
+        public long getCount() {
+            return count;
+        }
+
+        public String getSampleMessage() {
+            return sampleMessage;
+        }
+
+        public void setSampleMessage(String sampleMessage) {
+            this.sampleMessage = sampleMessage;
+        }
+
+        public String getMostCommonLevel() {
+            return levelCounts.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElse(null);
+        }
     }
 
     private List<Facet> buildFacets(Map<String, Long> counts, long total, int topN) {

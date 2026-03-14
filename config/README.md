@@ -21,16 +21,37 @@ The included `application.yml` is pre-configured with sensible defaults and comm
 2. Run the application using `./start.sh` (or `start.bat` on Windows)
 3. Changes take effect immediately - no rebuild needed!
 
-## Example Configurations
+## Smart Auto-Detection (Recommended)
 
-### For Different Log Formats
+**LogSearch now automatically detects log formats!**
+
+The system includes built-in support for:
+- WebLogic
+- WebSphere
+- Tomcat/Log4j
+- ISO-8601 timestamps
+- Custom application formats
+
+**In most cases, you don't need to configure log patterns at all.**
+
+Simply drop your logs into the directory and the system will:
+- Auto-detect the format on first read
+- Cache the detected format per file for performance
+- Handle mixed formats in the same directory
+- Extract log levels (ERROR, WARN, INFO) automatically
+
+## Example Configurations (Advanced/Optional)
+
+You can still manually configure patterns if needed, but auto-detection works for most cases.
+
+### For Different File Name Patterns
 
 **Apache/Nginx Access Logs:**
 ```yaml
 log-search:
   file-pattern: "access\\.log\\.\\d{4}-\\d{2}-\\d{2}"
   filename-date-pattern: "access\\.log\\.(\\d{4})-(\\d{2})-(\\d{2})"
-  log-datetime-format: "dd/MMM/yyyy:HH:mm:ss Z"
+  # Log format will be auto-detected
 ```
 
 **Standard Java Logs:**
@@ -38,16 +59,10 @@ log-search:
 log-search:
   file-pattern: "application-\\d{4}-\\d{2}-\\d{2}\\.log"
   filename-date-pattern: "application-(\\d{4})-(\\d{2})-(\\d{2})\\.log"
-  log-datetime-format: "yyyy-MM-dd HH:mm:ss"
+  # Log format will be auto-detected
 ```
 
-**Syslog Format:**
-```yaml
-log-search:
-  file-pattern: "syslog-\\d{8}"
-  filename-date-pattern: "syslog-(\\d{4})(\\d{2})(\\d{2})"
-  log-datetime-format: "MMM dd HH:mm:ss"
-```
+**Note:** `log-line-pattern` and `log-datetime-format` are now optional thanks to smart auto-detection!
 
 ### For Different Timezones
 
@@ -64,8 +79,35 @@ log-search:
 ```yaml
 log-search:
   retention-days: 7               # Keep only last 7 days
-  watch-interval: 300             # Check for new files every 5 minutes
+  watch-interval: 3600            # Check for new files every hour (instead of 60s)
+  # OR
+  auto-watch: false               # Disable auto-scanning entirely (manual indexing via UI)
 ```
+
+### For Quiet Operation (Recommended)
+
+Reduce console logging and disable background scanning for typical use:
+
+```yaml
+log-search:
+  auto-watch: false               # Disable automatic file scanning
+
+logging:
+  level:
+    com.lsearch.logsearch: WARN   # Only show warnings and errors
+```
+
+**Command line equivalent:**
+```bash
+java -jar log-search-1.0.0.jar \
+  --logging.level.com.lsearch=WARN \
+  --log-search.auto-watch=false
+```
+
+This configuration:
+- Minimizes console output (only warnings/errors shown)
+- No background CPU usage (index manually when you add logs)
+- Use "Re-Index Logs" button in UI when needed
 
 ## Distribution
 

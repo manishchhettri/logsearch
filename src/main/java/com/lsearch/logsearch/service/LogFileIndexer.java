@@ -13,8 +13,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -28,7 +29,8 @@ public class LogFileIndexer {
     private final LogParser logParser;
     private final LuceneIndexService indexService;
 
-    private final Set<String> indexedFiles = new HashSet<>();
+    // Thread-safe set for parallel indexing
+    private final Set<String> indexedFiles = ConcurrentHashMap.newKeySet();
 
     public LogFileIndexer(LogSearchProperties properties, LogParser logParser, LuceneIndexService indexService) {
         this.properties = properties;
@@ -44,7 +46,7 @@ public class LogFileIndexer {
     }
 
     public void indexAllLogs() throws IOException {
-        log.info("Starting to index all log files...");
+        log.info("Starting to index all log files (parallel mode)...");
 
         Path logsDir = Paths.get(properties.getLogsDir());
         if (!Files.exists(logsDir)) {
@@ -55,17 +57,25 @@ public class LogFileIndexer {
         }
 
         Pattern filePattern = Pattern.compile(properties.getFilePattern());
+        AtomicInteger processedFiles = new AtomicInteger(0);
 
+        // Parallel indexing - process multiple files concurrently
         try (Stream<Path> paths = Files.list(logsDir)) {
             paths.filter(Files::isRegularFile)
                     .filter(path -> filePattern.matcher(path.getFileName().toString()).matches())
-                    .forEach(this::indexLogFile);
+                    .parallel()  // Enable parallel processing
+                    .forEach(path -> {
+                        indexLogFile(path);
+                        processedFiles.incrementAndGet();
+                    });
         }
 
+        // Commit all index writers
         indexService.commit();
         indexService.deleteOldIndexes();
 
-        log.info("Indexing completed. Total files indexed: {}", indexedFiles.size());
+        log.info("Parallel indexing completed. Total files indexed: {} (processed: {})",
+                indexedFiles.size(), processedFiles.get());
     }
 
     @Scheduled(fixedDelayString = "${log-search.watch-interval}000", initialDelay = 60000)
@@ -174,7 +184,7 @@ public class LogFileIndexer {
                 }
 
                 // Commit every 10000 lines to avoid memory issues
-                if (indexedLines.get() % 10000 == 0) {
+                if (indexedLines.get() % 10000 == 0 && indexedLines.get() > 0) {
                     indexService.commit();
                 }
             }

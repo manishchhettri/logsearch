@@ -167,6 +167,57 @@ This helps identify spikes and unusual patterns.
 
 ---
 
+## Pattern Fingerprinting
+
+Automatically identifies and groups similar log messages by extracting normalized patterns.
+
+Example:
+
+```
+Original logs:
+  ERROR: Failed to connect to database at 192.168.1.1
+  ERROR: Failed to connect to database at 192.168.1.2
+  ERROR: Failed to connect to database at 192.168.1.3
+
+Pattern detected:
+  ERROR: Failed to connect to database at <IP>  (×3 occurrences)
+```
+
+Benefits:
+• Quickly identify the most common error patterns
+• See percentage distribution of error types
+• Click a pattern to view all matching logs
+• Spot recurring issues across different contexts
+
+The UI displays "🎯 TOP ERROR PATTERNS" showing:
+• Pattern text with variables normalized
+• Occurrence count
+• Percentage of total logs
+• Log level (ERROR, WARN, INFO)
+
+---
+
+## Smart Format Detection
+
+Automatically detects log formats from various server types with **zero configuration**.
+
+Supported formats:
+• WebLogic
+• WebSphere
+• Tomcat / Log4j
+• ISO-8601 timestamps
+• Custom application formats
+
+Benefits:
+• No manual configuration required
+• Handles mixed log formats in same directory
+• Automatically adapts when log format changes
+• Per-file format caching for performance
+
+Simply drop logs into the directory and search — format detection happens automatically.
+
+---
+
 ## Dashboard View
 
 Provides a quick overview of log activity including:

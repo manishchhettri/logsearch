@@ -6,51 +6,50 @@ import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.Tokenizer;
 import org.apache.lucene.analysis.core.StopFilter;
 import org.apache.lucene.analysis.en.EnglishAnalyzer;
-import org.apache.lucene.analysis.pattern.PatternTokenizer;
-
-import java.util.regex.Pattern;
+import org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter;
+import org.apache.lucene.analysis.standard.StandardTokenizer;
 
 /**
- * Custom analyzer optimized for Java code and stack traces.
+ * Custom analyzer optimized for Java code and stack traces with camelCase splitting.
  *
- * This analyzer tokenizes on dots, parentheses, colons, and other code delimiters
- * to enable searching for individual class names, method names, and package components.
+ * This analyzer tokenizes on dots, parentheses, colons, and other code delimiters,
+ * AND splits camelCase words to enable intuitive searching.
  *
  * Examples:
- * - "com.example.DataValidator" → ["com", "example", "datavalidator"]
- * - "at DataValidator.validate(DataValidator.java:123)" → ["at", "datavalidator", "validate", "java", "123"]
+ * - "com.example.DataValidator" → ["com", "example", "data", "validator"]
+ * - "NullPointerException" → ["null", "pointer", "exception"]
+ * - "at DataValidator.validate(DataValidator.java:123)" → ["data", "validator", "validate", "java", "123"]
+ *
+ * This allows searches like:
+ * - "NullPointer" to match "NullPointerException"
+ * - "Pointer" to match "NullPointerException"
+ * - "DataValidator" or just "Validator" to match the class
  */
 public class CodeAnalyzer extends Analyzer {
 
-    /**
-     * Pattern that splits on:
-     * - Dots (.)
-     * - Parentheses ( and )
-     * - Colons (:)
-     * - At-signs (@)
-     * - Dollar signs ($)
-     * - Square brackets [ and ]
-     * - Angle brackets < and >
-     * - Semicolons (;)
-     * - Commas (,)
-     * - Forward slashes (/)
-     * - Backslashes (\)
-     * - Whitespace
-     *
-     * This preserves words while splitting Java package names, class names, method signatures, etc.
-     */
-    private static final Pattern TOKEN_PATTERN = Pattern.compile("[\\s.():@$\\[\\]<>;,/\\\\]+");
-
     @Override
     protected TokenStreamComponents createComponents(String fieldName) {
-        // Use PatternTokenizer to split on our custom pattern
-        Tokenizer tokenizer = new PatternTokenizer(TOKEN_PATTERN, -1);
+        // Use StandardTokenizer as the base (handles basic whitespace and punctuation)
+        Tokenizer tokenizer = new StandardTokenizer();
+
+        // WordDelimiterGraphFilter configuration:
+        // GENERATE_WORD_PARTS: Split camelCase (NullPointerException → Null, Pointer, Exception)
+        // GENERATE_NUMBER_PARTS: Split numbers from letters (test123 → test, 123)
+        // SPLIT_ON_CASE_CHANGE: Split when case changes (camelCase boundaries)
+        // SPLIT_ON_NUMERICS: Split letters from numbers
+        // STEM_ENGLISH_POSSESSIVE: Remove 's from words
+        int flags = WordDelimiterGraphFilter.GENERATE_WORD_PARTS |
+                    WordDelimiterGraphFilter.GENERATE_NUMBER_PARTS |
+                    WordDelimiterGraphFilter.SPLIT_ON_CASE_CHANGE |
+                    WordDelimiterGraphFilter.SPLIT_ON_NUMERICS |
+                    WordDelimiterGraphFilter.STEM_ENGLISH_POSSESSIVE;
+
+        TokenStream tokenStream = new WordDelimiterGraphFilter(tokenizer, flags, null);
 
         // Apply lowercase filter
-        TokenStream tokenStream = new LowerCaseFilter(tokenizer);
+        tokenStream = new LowerCaseFilter(tokenStream);
 
-        // Apply English stop words filter (removes common words like "the", "a", "at", etc.)
-        // Note: "at" is a stop word, but in stack traces it's often not meaningful for search
+        // Apply English stop words filter (removes common words like "the", "a", "is", etc.)
         tokenStream = new StopFilter(tokenStream, EnglishAnalyzer.ENGLISH_STOP_WORDS_SET);
 
         return new TokenStreamComponents(tokenizer, tokenStream);

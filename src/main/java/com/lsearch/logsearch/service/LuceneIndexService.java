@@ -30,6 +30,9 @@ public class LuceneIndexService {
     private final Map<String, IndexWriter> indexWriters = new ConcurrentHashMap<>();
     private final CodeAnalyzer analyzer = new CodeAnalyzer();
 
+    // Locks per date to prevent concurrent IndexWriter creation for the same date
+    private final Map<String, Object> dateLocks = new ConcurrentHashMap<>();
+
     public LuceneIndexService(LogSearchProperties properties) {
         this.properties = properties;
         initializeIndexDirectory();
@@ -84,6 +87,13 @@ public class LuceneIndexService {
         // Message - main searchable content
         doc.add(new TextField("message", entry.getMessage(), Field.Store.YES));
 
+        // Extract and index pattern for fingerprinting/analytics
+        String pattern = PatternExtractor.extractPattern(entry.getMessage());
+        if (PatternExtractor.isMeaningfulPattern(pattern)) {
+            doc.add(new StringField("pattern", pattern, Field.Store.YES));
+            doc.add(new TextField("patternText", pattern, Field.Store.NO)); // For searching
+        }
+
         // Source file and line number for reference
         doc.add(new StringField("sourceFile", entry.getSourceFile(), Field.Store.YES));
         doc.add(new LongPoint("lineNumber", entry.getLineNumber()));
@@ -93,7 +103,18 @@ public class LuceneIndexService {
     }
 
     private IndexWriter getOrCreateIndexWriter(String date) throws IOException {
-        return indexWriters.computeIfAbsent(date, d -> {
+        // Get or create a lock object for this specific date
+        Object dateLock = dateLocks.computeIfAbsent(date, k -> new Object());
+
+        // Synchronize on the date-specific lock to prevent concurrent IndexWriter creation
+        synchronized (dateLock) {
+            // Check if IndexWriter already exists (double-checked locking pattern)
+            IndexWriter existingWriter = indexWriters.get(date);
+            if (existingWriter != null) {
+                return existingWriter;
+            }
+
+            // Create new IndexWriter
             try {
                 Path indexPath = Paths.get(properties.getIndexDir(), date);
                 Files.createDirectories(indexPath);
@@ -103,6 +124,7 @@ public class LuceneIndexService {
                 config.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 
                 IndexWriter writer = new IndexWriter(directory, config);
+                indexWriters.put(date, writer);
                 log.info("Created/opened index writer for date: {}", date);
                 return writer;
 
@@ -110,7 +132,7 @@ public class LuceneIndexService {
                 log.error("Failed to create index writer for date: {}", date, e);
                 throw new RuntimeException("Failed to create index writer", e);
             }
-        });
+        }
     }
 
     public void commit() throws IOException {

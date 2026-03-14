@@ -164,14 +164,18 @@ com.lsearch.logsearch/
 │   ├── LogEntry.java                  # Domain model for a single log entry
 │   ├── SearchResult.java              # Search response model (results + metadata)
 │   ├── AggregationResult.java         # Aggregation response with facets and timelines
+│   ├── PatternSummary.java            # Pattern fingerprint with count and level
 │   └── Facet.java                     # Facet model (value, count, percentage)
 │
 └── service/
-    ├── CodeAnalyzer.java              # Custom Lucene analyzer for code-aware tokenization
-    ├── LogParser.java                 # Parses log lines into LogEntry objects
+    ├── CodeAnalyzer.java              # Custom Lucene analyzer with camelCase splitting
+    ├── LogParser.java                 # Parses log lines with auto-detection
+    ├── LogPatternDetector.java        # Auto-detects log formats (WebLogic, Tomcat, etc.)
+    ├── LogFormatPattern.java          # Pattern template for format detection
+    ├── PatternExtractor.java          # Extracts normalized patterns for fingerprinting
     ├── LuceneIndexService.java        # Manages Lucene IndexWriters per day
     ├── LogFileIndexer.java            # Watches log files and triggers indexing
-    ├── LogSearchService.java          # Executes searches across day indexes
+    ├── LogSearchService.java          # Executes searches with pattern aggregation
     └── LogDownloadService.java        # Handles bulk log file/URL downloads
 ```
 
@@ -490,27 +494,35 @@ if (groupCount >= 6) {
 **Responsibilities**:
 - Custom tokenization optimized for Java code and stack traces
 - Splits text on code-specific delimiters (dots, parentheses, colons, etc.)
+- **CamelCase-aware**: Splits `NullPointerException` into `null`, `pointer`, `exception`
 - Enables searching for Java class names without full package paths
 - Applies lowercase filtering and stop word removal
 
 **Problem Solved**:
-StandardAnalyzer treats dotted names like `com.example.DataValidator` as single tokens or email addresses, making individual components unsearchable. CodeAnalyzer splits them properly.
+StandardAnalyzer treats dotted names like `com.example.DataValidator` as single tokens or email addresses, making individual components unsearchable. CodeAnalyzer splits them properly AND breaks camelCase words.
 
-**Tokenization Pattern**:
-```java
-// Splits on: . ( ) : @ $ [ ] < > ; , / \ and whitespace
-private static final Pattern TOKEN_PATTERN =
-    Pattern.compile("[\\s.():@$\\[\\]<>;,/\\\\]+");
-```
+**CamelCase Splitting**:
+Uses `WordDelimiterGraphFilter` with the following flags:
+- `GENERATE_WORD_PARTS` - Splits camelCase (NullPointerException → Null, Pointer, Exception)
+- `SPLIT_ON_CASE_CHANGE` - Splits when case changes
+- `SPLIT_ON_NUMERICS` - Separates letters from numbers
+- `GENERATE_NUMBER_PARTS` - Extracts numeric components
 
 **Examples**:
 
 | Input | StandardAnalyzer Tokens | CodeAnalyzer Tokens |
 |-------|------------------------|---------------------|
-| `com.example.DataValidator` | `com.example.datavalidator` | `com`, `example`, `datavalidator` |
-| `validateLevel78(DataValidator.java:1232)` | `validatelevel78`, `datavalidator.java`, `1232` | `validatelevel78`, `datavalidator`, `java`, `1232` |
-| `OutOfMemoryError` | `outofmemoryerror` | `outofmemoryerror` |
+| `com.example.DataValidator` | `com.example.datavalidator` | `com`, `example`, `data`, `validator` |
+| `NullPointerException` | `nullpointerexception` | `null`, `pointer`, `exception` |
+| `validateLevel78(DataValidator.java:1232)` | `validatelevel78`, `datavalidator.java`, `1232` | `validate`, `level`, `78`, `data`, `validator`, `java`, `1232` |
+| `OutOfMemoryError` | `outofmemoryerror` | `out`, `of`, `memory`, `error` |
 | `org.springframework.web.servlet` | `org.springframework.web.servlet` | `org`, `springframework`, `web`, `servlet` |
+
+**Search Benefits**:
+- Search `"Pointer"` → finds `NullPointerException`
+- Search `"Validator"` → finds `DataValidator`, `InputValidator`, etc.
+- Search `"Memory"` → finds `OutOfMemoryError`
+- Search `"Transaction"` → finds `TransactionManager`, `TransactionService`, etc.
 
 **Token Stream Pipeline**:
 ```java
@@ -874,6 +886,219 @@ private List<String> getDateRangeDirs(ZonedDateTime startTime, ZonedDateTime end
     // Return sorted list: ["2026-03-11", "2026-03-12", "2026-03-13"]
 }
 ```
+
+---
+
+### 13. LogPatternDetector.java
+**Package**: `com.lsearch.logsearch.service`
+**Type**: Service (@Service)
+
+**Responsibilities**:
+- Automatically detects log formats from various server types
+- Maintains a library of common log patterns (WebLogic, WebSphere, Tomcat, etc.)
+- Caches detected patterns per file for performance
+- Zero configuration required for supported formats
+
+**Built-in Format Library**:
+```java
+// WebLogic
+"[timestamp] [thread] [level] [logger] [] [user:xxx] - message"
+
+// WebSphere
+"[timestamp] [thread] level logger [user] message"
+
+// Log4j/Tomcat
+"timestamp [thread] level logger - message"
+
+// ISO-8601
+"2026-03-12T14:30:45.123+13:00 level message"
+
+// Simple
+"[timestamp] [user] message"
+```
+
+**Auto-Detection Flow**:
+```java
+public LogEntry parseLine(String line, String sourceFile, long lineNumber) {
+    // Try cached pattern for this file first (fast path - 90%+ hit rate)
+    LogFormatPattern cachedPattern = detectedPatterns.get(sourceFile);
+    if (cachedPattern != null) {
+        LogEntry entry = cachedPattern.tryParse(line, sourceFile, lineNumber, zoneId);
+        if (entry != null) return entry;
+    }
+
+    // Try all patterns until one matches
+    for (LogFormatPattern pattern : patternLibrary) {
+        LogEntry entry = pattern.tryParse(line, sourceFile, lineNumber, zoneId);
+        if (entry != null) {
+            detectedPatterns.put(sourceFile, pattern);  // Cache for future
+            log.info("Auto-detected format '{}' for file: {}", pattern.getName(), sourceFile);
+            return entry;
+        }
+    }
+
+    return null;  // No pattern matched
+}
+```
+
+**Benefits**:
+- **Zero configuration**: Just drop logs and search
+- **Mixed formats supported**: WebLogic + Tomcat + JSON in same directory
+- **Automatic adaptation**: Handles format changes without reconfiguration
+- **High performance**: Per-file caching minimizes detection overhead
+
+**Used By**: `LogParser` (Tier 0 in multi-tier parsing)
+
+---
+
+### 14. LogFormatPattern.java
+**Package**: `com.lsearch.logsearch.service`
+**Type**: Pattern Template
+
+**Responsibilities**:
+- Represents a specific log format pattern with parsing logic
+- Contains regex pattern, datetime formatter, and field extractor
+- Provides `tryParse()` method that returns null if pattern doesn't match
+
+**Pattern Structure**:
+```java
+public class LogFormatPattern {
+    private final String name;                    // e.g., "WebLogic"
+    private final Pattern pattern;                // Regex for matching
+    private final DateTimeFormatter dateTimeFormatter;  // For timestamp parsing
+    private final FieldExtractor extractor;       // Extracts fields from matched groups
+}
+```
+
+**Example - WebLogic Pattern**:
+```java
+new LogFormatPattern(
+    "WebLogic",
+    "^\\[([^\\]]+)\\]\\s+\\[(.+?)\\]\\s+\\[([A-Z]+)\\s*\\]\\s+\\[([^\\]]+)\\]\\s+\\[\\]\\s+\\[user:([^\\]]+)\\]\\s+-\\s+(.*)$",
+    "dd MMM yyyy HH:mm:ss,SSS",
+    Extractors.WEBLOGIC  // Extracts: timestamp, thread, level, logger, user, message
+)
+```
+
+**Field Extractors**:
+Functional interface that extracts structured fields from regex groups:
+```java
+@FunctionalInterface
+public interface FieldExtractor {
+    LogEntry extract(Matcher matcher, DateTimeFormatter formatter, ZoneId zoneId,
+                    String sourceFile, long lineNumber) throws Exception;
+}
+```
+
+**Used By**: `LogPatternDetector`
+
+---
+
+### 15. PatternExtractor.java
+**Package**: `com.lsearch.logsearch.service`
+**Type**: Utility Class
+
+**Responsibilities**:
+- Extracts normalized patterns from log messages for fingerprinting
+- Replaces variable content with placeholders (IPs, numbers, UUIDs, etc.)
+- Identifies meaningful patterns vs. random noise
+
+**Pattern Normalization Examples**:
+```
+Original: "Failed to connect to 192.168.1.1 on port 5432"
+Pattern:  "Failed to connect to <IP> on port <NUM>"
+
+Original: "NullPointerException in TransactionManager.commit()"
+Pattern:  "NullPointerException in <CLASS>.<METHOD>()"
+
+Original: "User 12345 logged in from session abc-def-123"
+Pattern:  "User <NUM> logged in from session <UUID>"
+```
+
+**Normalization Rules**:
+```java
+public static String extractPattern(String message) {
+    String pattern = message;
+
+    // Replace IPs
+    pattern = pattern.replaceAll("\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b", "<IP>");
+
+    // Replace UUIDs
+    pattern = pattern.replaceAll("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "<UUID>");
+
+    // Replace numbers (4+ digits)
+    pattern = pattern.replaceAll("\\b\\d{4,}\\b", "<NUM>");
+
+    // Replace Java class.method()
+    pattern = pattern.replaceAll("([a-zA-Z][a-zA-Z0-9]+)\\.([a-zA-Z][a-zA-Z0-9]+)\\(\\)", "<CLASS>.<METHOD>()");
+
+    // Replace file paths
+    pattern = pattern.replaceAll("/[\\w/\\.]+", "<PATH>");
+
+    return pattern;
+}
+```
+
+**Meaningfulness Check**:
+```java
+public static boolean isMeaningfulPattern(String pattern) {
+    // Reject if >80% is placeholders (too generic)
+    // Reject if <10 characters (too short)
+    // Reject if all digits (log IDs)
+    return pattern.length() >= 10 &&
+           !pattern.matches("\\d+") &&
+           countPlaceholders(pattern) < pattern.length() * 0.8;
+}
+```
+
+**Used By**: `LuceneIndexService` (during indexing), `LogSearchService` (during aggregation)
+
+---
+
+### 16. PatternSummary.java
+**Package**: `com.lsearch.logsearch.model`
+**Type**: Model/DTO
+
+**Responsibilities**:
+- Represents aggregated pattern statistics for fingerprinting
+- Contains pattern text, occurrence count, percentage, and log level
+- Used in API responses and UI display
+
+**Structure**:
+```java
+@Data
+@Builder
+public class PatternSummary {
+    private String pattern;        // "Failed to connect to <IP>"
+    private long count;            // 245
+    private double percentage;     // 34.2
+    private String level;          // "ERROR"
+    private String sampleMessage;  // Original message example
+}
+```
+
+**Example Usage in API Response**:
+```json
+{
+  "patternSummaries": [
+    {
+      "pattern": "NullPointerException in <CLASS>.<METHOD>()",
+      "count": 245,
+      "percentage": 34.2,
+      "level": "ERROR",
+      "sampleMessage": "NullPointerException in TransactionManager.commit()"
+    },
+    {
+      "pattern": "Failed to connect to database at <IP>",
+      "count": 156,
+      "percentage": 21.8,
+      "level": "ERROR"
+    }
+  ]
+}
+```
+
+**Used By**: `LogSearchService` (aggregation), `AggregationResult`, Frontend UI (pattern display)
 
 ---
 
@@ -1812,6 +2037,12 @@ The application includes a modern, responsive web interface built with vanilla J
 **Analytics Sidebar**:
 - Statistics cards (Total Results, Error Count, Unique Users, Time Span)
 - Timeline chart (hourly/daily distribution)
+- **Pattern Fingerprinting** (🎯 TOP ERROR PATTERNS):
+  - Displays most common log patterns with normalized text
+  - Shows occurrence count and percentage distribution
+  - Color-coded by log level (ERROR/WARN/INFO)
+  - Click any pattern to search for matching logs
+  - Example: "NullPointerException in <CLASS>.<METHOD>() ×245 (34.2%)"
 - Pattern alerts (spikes, memory issues, high error rates)
 - Top-N facets (exceptions, loggers, users, files)
 

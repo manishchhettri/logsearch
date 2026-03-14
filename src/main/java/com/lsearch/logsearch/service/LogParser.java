@@ -33,14 +33,17 @@ public class LogParser {
     private final Pattern logPattern;
     private final Map<String, FileTime> fileModifiedCache = new ConcurrentHashMap<>();
     private final List<Pattern> timestampPatterns = new ArrayList<>();
+    private final LogPatternDetector patternDetector;
 
-    public LogParser(LogSearchProperties properties) {
+    public LogParser(LogSearchProperties properties, LogPatternDetector patternDetector) {
         this.properties = properties;
+        this.patternDetector = patternDetector;
 
         // Compile the log line pattern from configuration
         // Default: [timestamp] [user] message
         this.logPattern = Pattern.compile(properties.getLogLinePattern());
-        log.info("Initialized LogParser with pattern: {}", properties.getLogLinePattern());
+        log.info("Initialized LogParser with configured pattern: {}", properties.getLogLinePattern());
+        log.info("Auto-detection enabled with {} built-in patterns", patternDetector != null ? "smart" : "no");
 
         // Initialize common timestamp patterns for fallback detection
         initializeTimestampPatterns();
@@ -61,6 +64,14 @@ public class LogParser {
     public LogEntry parseLine(String line, String sourceFile, long lineNumber, Path filePath) {
         if (line == null || line.trim().isEmpty()) {
             return null;
+        }
+
+        // Tier 0: Try auto-detection (smart pattern library)
+        if (patternDetector != null) {
+            LogEntry entry = patternDetector.parseLine(line, sourceFile, lineNumber);
+            if (entry != null) {
+                return entry;
+            }
         }
 
         // Tier 1: Try primary configured pattern
