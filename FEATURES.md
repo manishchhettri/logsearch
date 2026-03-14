@@ -1,6 +1,6 @@
 # Log Search - Features & Roadmap
 
-## Implemented Features ✅
+## Implemented Features
 
 ### Core Search Capabilities
 - ✅ Full-text search across all log fields with Lucene
@@ -14,7 +14,7 @@
 - ✅ Wildcards and phrase searches
 - ✅ Field-specific searches (level:ERROR, user:admin, etc.)
 
-### Analytics & Insights 📊
+### Analytics & Insights 
 - ✅ **Error Hotspots** - Automatic grouping by exception type, component, user
 - ✅ **Timeline Visualization** - Hourly/daily error distribution with spike detection
 - ✅ **Top N Analysis** - Most affected components, users, files with percentages
@@ -22,7 +22,7 @@
 - ✅ **Aggregations API** - Multi-facet aggregation (level, exception, logger, user, file)
 - ✅ **Statistics Cards** - Total logs, errors, warnings, top exceptions
 
-### Advanced Search 🔍
+### Advanced Search 
 - ✅ **Faceted Filters** - Dynamic left-sidebar filters (click to refine)
 - ✅ **Context View** - See surrounding logs before/after a specific entry
 - ✅ **Field Highlighting** - Automatic highlighting of errors, exceptions, IPs, URLs, timestamps, paths, IDs
@@ -37,7 +37,7 @@
 - ✅ **Bulk Download** - Download logs from multiple URLs/paths simultaneously (up to 5)
 - ✅ **Export** - Export search results to various formats
 
-### Log Format Support 📝
+### Log Format Support 
 - ✅ **Multi-Format Parsing** - 5-tier fallback strategy
 - ✅ **JSON Logs** - Auto-detection and field extraction
 - ✅ **Apache/Nginx Logs** - Access log format support
@@ -46,7 +46,7 @@
 - ✅ **Smart Continuation** - Automatic detection of continuation lines
 - ✅ **Timestamp Auto-detection** - Supports ISO 8601, Apache, Syslog, and custom formats
 
-### Operations & Management 🔧
+### Operations & Management
 - ✅ **Auto-indexing** - Automatically watches for new log files
 - ✅ **Retention Management** - Auto-cleanup of old indexes
 - ✅ **Configurable Settings** - External YAML configuration without rebuild
