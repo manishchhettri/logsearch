@@ -52,6 +52,57 @@ Instead of searching raw files, developers query a **high-performance index**.
 
 ---
 
+# Screenshots
+
+### Search Interface with Pattern Fingerprinting
+
+![Search Interface](screenshots/search_1.png)
+
+**Key Features Shown:**
+- Faceted navigation with TOP ERROR PATTERNS sidebar
+- Pattern fingerprinting (e.g., "Database connection failed - java.sql.Exception: Connection refused")
+- Quick analytics: Total logs, Errors, Warnings, Top exception types
+- Detected patterns and alerts
+- Time range selector (Last 1h, 6h, 24h, 7d)
+
+### Search Results with Timeline Visualization
+
+![Search Results](screenshots/search_2.png)
+
+**Key Features Shown:**
+- Timeline distribution by log level (stacked bar chart)
+- Log level facets (INFO: 460, ERROR: 192, WARN: 124)
+- Exception type facets (SQLException, NullPointerException, OutOfMemoryError)
+- Component/package facets for code-aware filtering
+- Syntax-highlighted search results
+- Export options (CSV, JSON, Add to Dashboard)
+- Performance metrics (e.g., "took 167ms")
+
+### Context View with Stack Traces
+
+![Context View](screenshots/search_3.png)
+
+**Key Features Shown:**
+- Full context view showing log lines before and after selected event
+- Multi-line stack trace handling
+- Syntax highlighting for exceptions, error keywords, file paths
+- Line-by-line navigation
+- Color-coded log levels (ERROR, WARN, INFO)
+
+### Dashboards with Analytics Widgets
+
+![Dashboard View](screenshots/dashboard.png)
+
+**Key Features Shown:**
+- Custom dashboards with auto-refresh
+- Log levels distribution (pie chart)
+- Top exceptions (bar chart)
+- Total log entries counter
+- Dashboard management (View, Delete, Refresh)
+- Pattern fingerprinting in sidebar for quick filtering
+
+---
+
 # Key Benefits
 
 ### Fast Investigation
@@ -258,18 +309,57 @@ The UI displays "🎯 TOP ERROR PATTERNS" showing:
 
 Automatically detects log formats from various server types with **zero configuration**.
 
-Supported formats:
-• WebLogic
-• WebSphere
-• Tomcat / Log4j
-• ISO-8601 timestamps
-• Custom application formats
+### Supported Formats
 
-Benefits:
-• No manual configuration required
-• Handles mixed log formats in same directory
-• Automatically adapts when log format changes
-• Per-file format caching for performance
+Built-in support for common application servers:
+• **WebLogic** - `[timestamp] [thread] [level] [logger] [] [user:xxx] - message`
+• **WebSphere** - `[timestamp] [thread] level logger [user] message`
+• **Tomcat/Log4j** - `timestamp [thread] level logger - message`
+• **ISO-8601** - `2026-03-12T14:30:45.123+13:00 level message`
+• **Custom application formats** - Flexible pattern matching
+
+### Multi-Tier Parsing Strategy
+
+LogSearch uses a **graceful fallback system** to ensure logs are always parsed:
+
+**Tier 0: Smart Auto-Detection** (Primary)
+- Tries built-in patterns for WebLogic, WebSphere, Tomcat, etc.
+- Detects format on first successful match
+- Caches detected format per file for performance
+
+**Tier 1: Configured Pattern** (Fallback)
+- Uses pattern from `application.yml` if auto-detection fails
+- Allows custom format specification if needed
+
+**Tier 2+: Progressive Fallbacks**
+- Extracts timestamp and message with relaxed parsing
+- Ensures no log lines are dropped
+- Always indexes something, even if format is unusual
+
+### Handling Mixed Formats
+
+**Multiple log files, different formats:**
+```
+logs/
+  ├── weblogic-server.log     → Detected as WebLogic format
+  ├── tomcat-application.log  → Detected as Tomcat format
+  └── custom-service.log      → Detected as custom format
+```
+
+Each file's format is detected independently and cached. No manual configuration needed.
+
+**Format changes within a file:**
+- If format changes mid-file, system adapts automatically
+- Each line is parsed with best-matching pattern
+- No re-indexing required
+
+### Benefits
+
+• **Zero configuration** - Works out of the box with standard server logs
+• **Graceful degradation** - Always extracts something, never fails completely
+• **Mixed format support** - Handle WebLogic + Tomcat + custom in same directory
+• **Performance** - Per-file format caching avoids repeated detection
+• **Reliability** - Multi-tier fallback ensures robust parsing
 
 Simply drop logs into the directory and search — format detection happens automatically.
 
