@@ -21,10 +21,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -204,8 +206,24 @@ public class LogSearchService {
                     .userFacets(new ArrayList<>())
                     .fileFacets(new ArrayList<>())
                     .timelineHourly(new LinkedHashMap<>())
+                    .timelineByLevel(new LinkedHashMap<>())
                     .detectedPatterns(new ArrayList<>())
                     .build();
+        }
+
+        // Determine interval based on time range
+        long rangeHours = Duration.between(startTime, endTime).toHours();
+        ChronoUnit intervalUnit;
+        int intervalAmount;
+        if (rangeHours <= 2) {
+            intervalUnit = ChronoUnit.MINUTES;
+            intervalAmount = 15; // 15-minute intervals
+        } else if (rangeHours <= 168) { // 7 days
+            intervalUnit = ChronoUnit.HOURS;
+            intervalAmount = 1; // hourly
+        } else {
+            intervalUnit = ChronoUnit.DAYS;
+            intervalAmount = 1; // daily
         }
 
         // Maps to collect aggregation data
@@ -215,6 +233,7 @@ public class LogSearchService {
         Map<String, Long> userCounts = new HashMap<>();
         Map<String, Long> fileCounts = new HashMap<>();
         Map<String, Long> timelineHourly = new LinkedHashMap<>();
+        Map<String, Map<String, Long>> timelineByLevel = new LinkedHashMap<>();
 
         long totalHits = 0;
         List<LogEntry> allEntries = new ArrayList<>();
@@ -293,11 +312,16 @@ public class LogSearchService {
                         fileCounts.merge(sourceFile, 1L, Long::sum);
                     }
 
-                    // Build hourly timeline
+                    // Build timeline with dynamic intervals
                     ZonedDateTime timestamp = entry.getTimestamp();
-                    String hourKey = timestamp.withMinute(0).withSecond(0).withNano(0)
-                            .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
-                    timelineHourly.merge(hourKey, 1L, Long::sum);
+                    String intervalKey = getIntervalKey(timestamp, intervalUnit, intervalAmount);
+                    timelineHourly.merge(intervalKey, 1L, Long::sum);
+
+                    // Build timeline by level (reuse level variable from above)
+                    if (level != null && !level.isEmpty()) {
+                        timelineByLevel.computeIfAbsent(intervalKey, k -> new HashMap<>())
+                                .merge(level, 1L, Long::sum);
+                    }
                 }
 
             } catch (Exception e) {
@@ -326,8 +350,24 @@ public class LogSearchService {
                 .userFacets(userFacets)
                 .fileFacets(fileFacets)
                 .timelineHourly(timelineHourly)
+                .timelineByLevel(timelineByLevel)
                 .detectedPatterns(patterns)
                 .build();
+    }
+
+    private String getIntervalKey(ZonedDateTime timestamp, ChronoUnit intervalUnit, int intervalAmount) {
+        ZonedDateTime truncated;
+        if (intervalUnit == ChronoUnit.MINUTES) {
+            // Round down to nearest interval
+            int minute = timestamp.getMinute();
+            int roundedMinute = (minute / intervalAmount) * intervalAmount;
+            truncated = timestamp.withMinute(roundedMinute).withSecond(0).withNano(0);
+        } else if (intervalUnit == ChronoUnit.HOURS) {
+            truncated = timestamp.withMinute(0).withSecond(0).withNano(0);
+        } else { // DAYS
+            truncated = timestamp.withHour(0).withMinute(0).withSecond(0).withNano(0);
+        }
+        return truncated.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     }
 
     private List<Facet> buildFacets(Map<String, Long> counts, long total, int topN) {

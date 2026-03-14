@@ -52,6 +52,13 @@ public class AggregationResult {
     private Map<String, Long> timelineHourly;
 
     /**
+     * Timeline histogram by log level - flexible intervals
+     * Map<timestamp, Map<level, count>>
+     * e.g., {"2026-03-13T15:00:00Z": {"ERROR": 10, "WARN": 20, "INFO": 90}}
+     */
+    private Map<String, Map<String, Long>> timelineByLevel;
+
+    /**
      * Detected patterns (spikes, trends, anomalies)
      * e.g., ["Memory leak suspected", "Spike detected at 17:03"]
      */
@@ -62,7 +69,8 @@ public class AggregationResult {
 
     public AggregationResult(long totalHits, List<Facet> levelFacets, List<Facet> exceptionFacets,
                            List<Facet> loggerFacets, List<Facet> userFacets, List<Facet> fileFacets,
-                           Map<String, Long> timelineHourly, List<String> detectedPatterns) {
+                           Map<String, Long> timelineHourly, Map<String, Map<String, Long>> timelineByLevel,
+                           List<String> detectedPatterns) {
         this.totalHits = totalHits;
         this.levelFacets = levelFacets;
         this.exceptionFacets = exceptionFacets;
@@ -70,6 +78,7 @@ public class AggregationResult {
         this.userFacets = userFacets;
         this.fileFacets = fileFacets;
         this.timelineHourly = timelineHourly;
+        this.timelineByLevel = timelineByLevel;
         this.detectedPatterns = detectedPatterns;
     }
 
@@ -129,6 +138,14 @@ public class AggregationResult {
         this.timelineHourly = timelineHourly;
     }
 
+    public Map<String, Map<String, Long>> getTimelineByLevel() {
+        return timelineByLevel;
+    }
+
+    public void setTimelineByLevel(Map<String, Map<String, Long>> timelineByLevel) {
+        this.timelineByLevel = timelineByLevel;
+    }
+
     public List<String> getDetectedPatterns() {
         return detectedPatterns;
     }
@@ -149,6 +166,7 @@ public class AggregationResult {
         private List<Facet> userFacets;
         private List<Facet> fileFacets;
         private Map<String, Long> timelineHourly;
+        private Map<String, Map<String, Long>> timelineByLevel;
         private List<String> detectedPatterns;
 
         public Builder totalHits(long totalHits) {
@@ -186,6 +204,11 @@ public class AggregationResult {
             return this;
         }
 
+        public Builder timelineByLevel(Map<String, Map<String, Long>> timelineByLevel) {
+            this.timelineByLevel = timelineByLevel;
+            return this;
+        }
+
         public Builder detectedPatterns(List<String> detectedPatterns) {
             this.detectedPatterns = detectedPatterns;
             return this;
@@ -193,7 +216,7 @@ public class AggregationResult {
 
         public AggregationResult build() {
             return new AggregationResult(totalHits, levelFacets, exceptionFacets, loggerFacets,
-                    userFacets, fileFacets, timelineHourly, detectedPatterns);
+                    userFacets, fileFacets, timelineHourly, timelineByLevel, detectedPatterns);
         }
     }
 }

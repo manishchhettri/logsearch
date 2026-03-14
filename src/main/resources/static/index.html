@@ -400,6 +400,105 @@
             display: none;
         }
 
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e1e4e8;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #586069;
+            transition: all 0.2s;
+            margin-bottom: -2px;
+        }
+
+        .tab:hover {
+            color: #0366d6;
+        }
+
+        .tab.active {
+            color: #0366d6;
+            border-bottom-color: #0366d6;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .download-form {
+            max-width: 800px;
+        }
+
+        .download-form .form-row {
+            margin-bottom: 15px;
+        }
+
+        .download-form label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .download-form input[type="text"],
+        .download-form input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .download-urls {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .download-auth {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .download-results {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border: 1px solid #e1e4e8;
+        }
+
+        .download-results h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #24292e;
+        }
+
+        .download-results ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .download-results li {
+            font-size: 13px;
+            color: #586069;
+            margin-bottom: 5px;
+        }
+
         .analytics-header {
             display: flex;
             align-items: center;
@@ -463,6 +562,14 @@
                 </div>
             </div>
 
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('search')">Search Logs</button>
+                <button class="tab" onclick="switchTab('download')">Download Logs</button>
+            </div>
+
+            <!-- Search Tab Content -->
+            <div id="searchTab" class="tab-content active">
             <div class="search-form">
                 <div class="form-row">
                     <label for="query">Search Query:</label>
@@ -509,7 +616,7 @@
 
                     <!-- Timeline Chart -->
                     <div id="timelineSection" class="analytics-section hidden">
-                        <h2>Timeline - Hourly Distribution</h2>
+                        <h2 id="timelineTitle">Timeline Distribution by Log Level</h2>
                         <div class="chart-container">
                             <canvas id="timelineChart"></canvas>
                         </div>
@@ -525,6 +632,59 @@
 
             <div id="loading" class="loading hidden">Searching...</div>
             <div id="noResults" class="no-results hidden">No results found</div>
+            </div>
+            <!-- End Search Tab -->
+
+            <!-- Download Tab Content -->
+            <div id="downloadTab" class="tab-content">
+                <div class="download-form">
+                    <h2 style="margin-bottom: 20px; font-size: 18px;">Download & Extract Log Files</h2>
+                    <p style="margin-bottom: 20px; color: #666; font-size: 14px;">
+                        Enter up to 4 URLs (files or directories). The system will auto-detect and download:
+                        <br><strong>• File URLs:</strong> Downloads the specific file
+                        <br><strong>• Directory URLs:</strong> Discovers and downloads all log files (.log, .gz, .zip, and extensionless text files)
+                        <br><strong>• Smart filtering:</strong> Skips binary files and 0-byte files, detects text files automatically
+                        <br>Compressed files (.gz, .zip) are automatically extracted.
+                    </p>
+
+                    <div class="download-urls">
+                        <div class="form-row">
+                            <label for="url1">URL 1:</label>
+                            <input type="text" id="url1" placeholder="File: https://server.com/logs/app.log.gz  OR  Directory: https://server.com/logs/">
+                        </div>
+                        <div class="form-row">
+                            <label for="url2">URL 2 (optional):</label>
+                            <input type="text" id="url2" placeholder="https://server.com/logs/app2/">
+                        </div>
+                        <div class="form-row">
+                            <label for="url3">URL 3 (optional):</label>
+                            <input type="text" id="url3" placeholder="https://server.com/logs/app3/">
+                        </div>
+                        <div class="form-row">
+                            <label for="url4">URL 4 (optional):</label>
+                            <input type="text" id="url4" placeholder="https://server.com/logs/app4/">
+                        </div>
+                    </div>
+
+                    <div class="download-auth">
+                        <div class="form-row">
+                            <label for="username">Username:</label>
+                            <input type="text" id="username" placeholder="Enter username">
+                        </div>
+                        <div class="form-row">
+                            <label for="password">Password:</label>
+                            <input type="password" id="password" placeholder="Enter password">
+                        </div>
+                    </div>
+
+                    <button class="btn-primary" onclick="downloadLogs()">Download & Extract</button>
+
+                    <div id="downloadStatus" class="status hidden"></div>
+                    <div id="downloadResults" class="download-results hidden"></div>
+                </div>
+            </div>
+            <!-- End Download Tab -->
+
         </main>
     </div>
 
@@ -632,7 +792,7 @@
             displayPatterns(agg.detectedPatterns);
 
             // Display timeline
-            displayTimeline(agg.timelineHourly);
+            displayTimeline(agg.timelineHourly, agg.timelineByLevel);
         }
 
         function displayStats(agg) {
@@ -755,39 +915,127 @@
             document.getElementById('patternsSection').classList.remove('hidden');
         }
 
-        function displayTimeline(timelineData) {
-            if (!timelineData || Object.keys(timelineData).length === 0) {
+        function displayTimeline(timelineData, timelineByLevel) {
+            // Prefer timelineByLevel if available, otherwise fall back to timelineData
+            if (timelineByLevel && Object.keys(timelineByLevel).length > 0) {
+                displayTimelineByLevel(timelineByLevel);
+            } else if (timelineData && Object.keys(timelineData).length > 0) {
+                displaySimpleTimeline(timelineData);
+            } else {
                 document.getElementById('timelineSection').classList.add('hidden');
-                return;
             }
+        }
 
+        function displayTimelineByLevel(timelineByLevel) {
             document.getElementById('timelineSection').classList.remove('hidden');
 
-            // Prepare data for chart
-            const labels = Object.keys(timelineData).map(ts => {
+            // Extract all unique log levels
+            const levels = new Set();
+            Object.values(timelineByLevel).forEach(levelMap => {
+                Object.keys(levelMap).forEach(level => levels.add(level));
+            });
+
+            // Sort levels by severity
+            const levelOrder = ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'];
+            const sortedLevels = Array.from(levels).sort((a, b) => {
+                return levelOrder.indexOf(a) - levelOrder.indexOf(b);
+            });
+
+            // Prepare labels
+            const labels = Object.keys(timelineByLevel).map(ts => {
                 const date = new Date(ts);
                 return date.toLocaleTimeString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
             });
-            const values = Object.values(timelineData);
+
+            // Prepare datasets for each log level
+            const levelColors = {
+                'ERROR': '#dc3545',
+                'WARN': '#ffc107',
+                'INFO': '#17a2b8',
+                'DEBUG': '#6c757d',
+                'TRACE': '#adb5bd'
+            };
+
+            const datasets = sortedLevels.map(level => {
+                const data = Object.keys(timelineByLevel).map(timestamp => {
+                    return timelineByLevel[timestamp][level] || 0;
+                });
+
+                return {
+                    label: level,
+                    data: data,
+                    backgroundColor: levelColors[level] || '#6c757d',
+                    borderColor: levelColors[level] || '#6c757d',
+                    borderWidth: 1
+                };
+            });
 
             // Destroy existing chart if any
             if (timelineChart) {
                 timelineChart.destroy();
             }
 
-            // Create new chart
+            // Create stacked bar chart
             const ctx = document.getElementById('timelineChart').getContext('2d');
             timelineChart = new Chart(ctx, {
-                type: 'line',
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function displaySimpleTimeline(timelineData) {
+            document.getElementById('timelineSection').classList.remove('hidden');
+
+            const labels = Object.keys(timelineData).map(ts => {
+                const date = new Date(ts);
+                return date.toLocaleTimeString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            });
+            const values = Object.values(timelineData);
+
+            if (timelineChart) {
+                timelineChart.destroy();
+            }
+
+            const ctx = document.getElementById('timelineChart').getContext('2d');
+            timelineChart = new Chart(ctx, {
+                type: 'bar',
                 data: {
                     labels: labels,
                     datasets: [{
                         label: 'Log Count',
                         data: values,
+                        backgroundColor: '#007bff',
                         borderColor: '#007bff',
-                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                        tension: 0.3,
-                        fill: true
+                        borderWidth: 1
                     }]
                 },
                 options: {
@@ -971,6 +1219,138 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function switchTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Show selected tab content
+            if (tabName === 'search') {
+                document.getElementById('searchTab').classList.add('active');
+                document.querySelectorAll('.tab')[0].classList.add('active');
+            } else if (tabName === 'download') {
+                document.getElementById('downloadTab').classList.add('active');
+                document.querySelectorAll('.tab')[1].classList.add('active');
+            }
+        }
+
+        async function downloadLogs() {
+            const urls = [
+                document.getElementById('url1').value,
+                document.getElementById('url2').value,
+                document.getElementById('url3').value,
+                document.getElementById('url4').value
+            ].filter(url => url && url.trim() !== '');
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            if (urls.length === 0) {
+                showDownloadStatus('Please enter at least one URL', 'error');
+                return;
+            }
+
+            if (!username || !password) {
+                showDownloadStatus('Please enter username and password', 'error');
+                return;
+            }
+
+            // Hide previous results
+            document.getElementById('downloadResults').classList.add('hidden');
+            showDownloadStatus('Downloading and extracting files...', 'info');
+
+            try {
+                const response = await fetch('/api/download-logs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        urls: urls,
+                        username: username,
+                        password: password
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showDownloadStatus(`Successfully processed ${result.totalFiles} file(s)`, 'success');
+                    displayDownloadResults(result);
+                } else {
+                    showDownloadStatus('Download completed with errors', 'error');
+                    displayDownloadResults(result);
+                }
+
+            } catch (error) {
+                showDownloadStatus('Download failed: ' + error.message, 'error');
+            }
+        }
+
+        function showDownloadStatus(message, type) {
+            const statusEl = document.getElementById('downloadStatus');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+            statusEl.classList.remove('hidden');
+
+            if (type === 'success') {
+                setTimeout(() => statusEl.classList.add('hidden'), 10000);
+            }
+        }
+
+        function displayDownloadResults(result) {
+            const resultsEl = document.getElementById('downloadResults');
+            resultsEl.innerHTML = '';
+
+            if (result.downloadedFiles && result.downloadedFiles.length > 0) {
+                const section = document.createElement('div');
+                section.innerHTML = '<h3>Downloaded Files:</h3>';
+                const list = document.createElement('ul');
+                result.downloadedFiles.forEach(file => {
+                    const item = document.createElement('li');
+                    item.textContent = file;
+                    list.appendChild(item);
+                });
+                section.appendChild(list);
+                resultsEl.appendChild(section);
+            }
+
+            if (result.extractedFiles && result.extractedFiles.length > 0) {
+                const section = document.createElement('div');
+                section.innerHTML = '<h3>Extracted Files:</h3>';
+                const list = document.createElement('ul');
+                result.extractedFiles.forEach(file => {
+                    const item = document.createElement('li');
+                    item.textContent = file;
+                    list.appendChild(item);
+                });
+                section.appendChild(list);
+                resultsEl.appendChild(section);
+            }
+
+            if (result.errors && result.errors.length > 0) {
+                const section = document.createElement('div');
+                section.innerHTML = '<h3 style="color: #721c24;">Errors:</h3>';
+                const list = document.createElement('ul');
+                result.errors.forEach(error => {
+                    const item = document.createElement('li');
+                    item.style.color = '#721c24';
+                    item.textContent = error;
+                    list.appendChild(item);
+                });
+                section.appendChild(list);
+                resultsEl.appendChild(section);
+            }
+
+            resultsEl.classList.remove('hidden');
         }
 
         // Initialize with last 24 hours
