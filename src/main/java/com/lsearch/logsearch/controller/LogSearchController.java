@@ -62,14 +62,20 @@ public class LogSearchController {
     }
 
     @PostMapping("/index")
-    public ResponseEntity<Map<String, Object>> triggerIndexing() {
+    public ResponseEntity<Map<String, Object>> triggerIndexing(
+            @RequestParam(defaultValue = "false") boolean fullReindex) {
         try {
-            log.info("Manual indexing triggered via API");
-            fileIndexer.indexAllLogs();
+            if (fullReindex) {
+                log.info("Full re-indexing triggered via API (deleting existing indexes)");
+                fileIndexer.fullReindex();
+            } else {
+                log.info("Incremental indexing triggered via API");
+                fileIndexer.indexAllLogs();
+            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("message", "Indexing completed");
+            response.put("message", fullReindex ? "Full re-indexing completed" : "Indexing completed");
             response.put("indexedFiles", fileIndexer.getIndexedFileCount());
 
             return ResponseEntity.ok(response);

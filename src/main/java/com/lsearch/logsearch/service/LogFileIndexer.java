@@ -205,6 +205,21 @@ public class LogFileIndexer {
         }
     }
 
+    public void fullReindex() throws IOException {
+        log.info("Starting FULL re-index (deleting existing indexes)...");
+
+        // Clear tracked files so everything gets re-indexed
+        indexedFiles.clear();
+
+        // Delete all existing indexes
+        indexService.deleteAllIndexes();
+
+        // Re-index everything
+        indexAllLogs();
+
+        log.info("Full re-index completed");
+    }
+
     public int getIndexedFileCount() {
         return indexedFiles.size();
     }

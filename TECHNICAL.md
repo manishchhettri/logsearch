@@ -1050,7 +1050,40 @@ Regex:          /error.*/
 
 **Endpoint**: `POST /api/index`
 
-**Description**: Manually triggers re-indexing of all log files
+**Parameters**:
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `fullReindex` | Boolean | No | If `true`, deletes all indexes and rebuilds from scratch. Default: `false` |
+
+**Description**: Manually triggers re-indexing of log files
+
+**Behavior**:
+- **Incremental** (default): Only indexes new files that haven't been indexed yet
+- **Full Re-index** (`fullReindex=true`): Deletes all existing indexes, clears tracked files, and re-indexes all logs from scratch
+
+**Example Requests**:
+```bash
+# Incremental re-index (only new files)
+curl -X POST http://localhost:8080/api/index
+
+# Full re-index (delete and rebuild all)
+curl -X POST "http://localhost:8080/api/index?fullReindex=true"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Indexing completed",
+  "indexedFiles": 13
+}
+```
+
+**Use Cases for Full Re-index**:
+- Changed log format settings in `config/application.yml`
+- Changed `log-line-pattern`, `log-datetime-format`, or `timezone`
+- Troubleshooting indexing issues
+- Ensuring all logs are parsed with current configuration
 
 ---
 

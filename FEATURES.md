@@ -9,7 +9,7 @@
 - ✓ Code-aware search (Java class names, stack traces)
 - ✓ Simple result display with formatted stack traces
 - ✓ Basic export (CSV)
-- ✓ Manual re-indexing
+- ✓ Manual re-indexing (incremental and full re-index options)
 - ✓ Web UI
 
 **Limitations:**

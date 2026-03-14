@@ -168,6 +168,34 @@ public class LuceneIndexService {
                 });
     }
 
+    public void deleteAllIndexes() throws IOException {
+        log.info("Deleting ALL indexes...");
+
+        // Close all index writers first
+        closeAll();
+
+        Path indexDir = Paths.get(properties.getIndexDir());
+
+        if (!Files.exists(indexDir)) {
+            log.warn("Index directory does not exist: {}", indexDir);
+            return;
+        }
+
+        // Delete all subdirectories (each date's index)
+        Files.list(indexDir)
+                .filter(Files::isDirectory)
+                .forEach(path -> {
+                    try {
+                        deleteDirectory(path);
+                        log.info("Deleted index: {}", path.getFileName());
+                    } catch (IOException e) {
+                        log.error("Failed to delete index directory: {}", path, e);
+                    }
+                });
+
+        log.info("All indexes deleted");
+    }
+
     private void deleteDirectory(Path path) throws IOException {
         Files.walk(path)
                 .sorted((a, b) -> b.compareTo(a)) // Reverse order to delete files before directories

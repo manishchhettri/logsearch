@@ -13,6 +13,7 @@ A lightweight, embedded Lucene-based log search application designed for develop
 - **Field Highlighting**: Automatic highlighting of errors, exceptions, IPs, URLs, IDs, timestamps, and patterns
 - **Quick Time Ranges**: One-click buttons for Last 1h, 6h, 24h, 2d, 7d with auto-updating relative time
 - **Analytics & Aggregations**: Error hotspots, timeline visualization, top-N analysis, pattern detection
+- **Bulk Download**: Download logs from multiple URLs/paths simultaneously (up to 5 concurrent downloads)
 - **Auto-indexing**: Automatically watches for new log files
 - **Multiple Log Format Support**: Auto-detects JSON logs, Apache/nginx access logs, and custom formats
 - **Flexible log parsing**: Support for simple 3-group and enhanced 6-group log formats (WebLogic, etc.)
@@ -121,6 +122,23 @@ java -jar log-search-1.0.0.jar index --logs-dir=/path/to/logs
 2. Set the date/time range or click "Last 24 Hours"
 3. Enter search terms (optional - leave empty to see all logs)
 4. Click "Search"
+
+### Re-indexing Logs
+
+The application provides a re-indexing feature accessible from the web UI:
+
+**Incremental Re-index** (default):
+- Click "Re-Index Logs" button
+- Leave "Full Re-Index" checkbox unchecked
+- Indexes only new log files that haven't been indexed yet
+- Quick and safe for regular updates
+
+**Full Re-index**:
+- Click "Re-Index Logs" button
+- Check the "Full Re-Index (delete and rebuild)" checkbox
+- Deletes all existing indexes and re-indexes all logs from scratch
+- Use when you've changed log format settings in `config/application.yml`
+- Required when changing `log-line-pattern`, `log-datetime-format`, or timezone settings
 
 ## Search Guide
 
@@ -400,7 +418,11 @@ curl "http://localhost:8080/api/search?query=OutOfMemoryError&startTime=2026-03-
 
 **Trigger re-indexing**
 ```bash
+# Incremental re-index (only new files)
 curl -X POST http://localhost:8080/api/index
+
+# Full re-index (delete all indexes and rebuild)
+curl -X POST "http://localhost:8080/api/index?fullReindex=true"
 ```
 
 **Response:**
@@ -411,6 +433,18 @@ curl -X POST http://localhost:8080/api/index
   "indexedFiles": 13
 }
 ```
+
+**Parameters:**
+
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `fullReindex` | boolean | Delete all existing indexes and rebuild from scratch | `false` |
+
+**When to use full re-index:**
+- Changed log format settings in `config/application.yml`
+- Changed datetime format patterns
+- Need to ensure all logs are re-parsed with current settings
+- Troubleshooting indexing issues
 
 **Check status**
 ```bash

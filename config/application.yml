@@ -46,7 +46,7 @@ log-search:
   #   yyyy-MM-dd HH:mm:ss             for: 2026-03-12 14:30:45
   #   dd MMM yyyy HH:mm:ss,SSS        for: 09 Mar 2026 18:48:36,378 (WebLogic)
   #   dd/MMM/yyyy:HH:mm:ss Z          for: 12/Mar/2026:14:30:45 +1300
-  log-datetime-format: "dd MMM yyyy HH:mm:ss,SSS"
+  log-datetime-format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
 
   # Timezone for parsing logs (use your local timezone)
   # Examples: Pacific/Auckland, America/New_York, UTC, Asia/Tokyo
