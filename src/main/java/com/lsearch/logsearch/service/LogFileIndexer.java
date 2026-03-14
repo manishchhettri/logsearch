@@ -46,7 +46,7 @@ public class LogFileIndexer {
     }
 
     public void indexAllLogs() throws IOException {
-        log.info("Starting to index all log files (parallel mode)...");
+        log.info("Starting to index all log files (parallel mode, recursive)...");
 
         Path logsDir = Paths.get(properties.getLogsDir());
         if (!Files.exists(logsDir)) {
@@ -60,7 +60,8 @@ public class LogFileIndexer {
         AtomicInteger processedFiles = new AtomicInteger(0);
 
         // Parallel indexing - process multiple files concurrently
-        try (Stream<Path> paths = Files.list(logsDir)) {
+        // Uses Files.walk() for recursive subdirectory scanning
+        try (Stream<Path> paths = Files.walk(logsDir)) {
             paths.filter(Files::isRegularFile)
                     .filter(path -> filePattern.matcher(path.getFileName().toString()).matches())
                     .parallel()  // Enable parallel processing
@@ -85,7 +86,7 @@ public class LogFileIndexer {
         }
 
         try {
-            log.debug("Checking for new log files...");
+            log.debug("Checking for new log files (recursive)...");
 
             Path logsDir = Paths.get(properties.getLogsDir());
             if (!Files.exists(logsDir)) {
@@ -94,7 +95,8 @@ public class LogFileIndexer {
 
             Pattern filePattern = Pattern.compile(properties.getFilePattern());
 
-            try (Stream<Path> paths = Files.list(logsDir)) {
+            // Recursive scanning of subdirectories
+            try (Stream<Path> paths = Files.walk(logsDir)) {
                 paths.filter(Files::isRegularFile)
                         .filter(path -> filePattern.matcher(path.getFileName().toString()).matches())
                         .filter(path -> !indexedFiles.contains(path.toString()))

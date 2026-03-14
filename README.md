@@ -76,6 +76,63 @@ Keeps Splunk for operational monitoring while enabling low-cost historical searc
 
 ---
 
+# Code-Aware Log Search
+
+**Unlike traditional log search tools, LogSearch understands Java code structures.**
+
+Most log search tools treat logs as plain text. LogSearch is built specifically for **application logs** and understands:
+
+### CamelCase Tokenization
+Searches automatically split Java class names and method names.
+
+Example:
+```
+Search: "NullPointer"
+Matches: NullPointerException, NullPointerWarning
+```
+
+You don't need to type the full exception name — search for any component.
+
+### Package-Aware Indexing
+Java package paths are automatically broken into searchable components.
+
+Example:
+```
+Log line: com.company.service.payment.PaymentValidator
+Searchable as: "PaymentValidator", "payment", "service", "company"
+```
+
+### Stack Trace Intelligence
+Multi-line stack traces are treated as **single searchable events**.
+
+Example:
+```
+java.lang.NullPointerException: Cannot process null payment
+    at com.company.service.PaymentService.process(PaymentService.java:123)
+    at com.company.controller.PaymentController.execute(PaymentController.java:45)
+```
+
+Searching for `PaymentService` returns the entire stack trace — not just the line where it appears.
+
+### Why This Matters
+
+Traditional tools require exact matches or complex wildcards:
+```
+grep "com.company.service.payment.PaymentValidator"  ❌ Too specific
+grep "*PaymentValidator"                             ❌ May not work
+```
+
+LogSearch allows natural searches:
+```
+PaymentValidator  ✅ Just works
+Validator         ✅ Matches any validator
+payment           ✅ Finds payment-related code
+```
+
+**This makes debugging significantly faster.**
+
+---
+
 # Core Features
 
 ## Full-Text Log Search
@@ -251,23 +308,54 @@ Search results can be downloaded for offline analysis or sharing with team membe
 # Architecture Overview
 
 ```
-              Log Files
-                  │
-                  ▼
-          Log Parsing Engine
-                  │
-                  ▼
-           Apache Lucene
-               Index
-                  │
-                  ▼
-             Search API
-                  │
-                  ▼
-         Developer Interface
+┌─────────────────────────────────────────────────────────────┐
+│                        Log Files                            │
+│  (WebLogic, WebSphere, Tomcat, Log4j, Custom formats)      │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   Smart Log Parser                          │
+│  • Auto-detect format (WebLogic/WebSphere/Tomcat/etc.)     │
+│  • Extract timestamp, level, user, message, thread          │
+│  • Multi-line stack trace handling                          │
+│  • Pattern fingerprint extraction                           │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Lucene Index Engine                        │
+│  • Code-aware analyzer (camelCase splitting)                │
+│  • Date-partitioned indexes (parallel search)               │
+│  • Full-text indexing with faceting                         │
+│  • Pattern fingerprint aggregation                          │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    REST Search API                          │
+│  • /api/search - Full-text search with date range           │
+│  • /api/context - Get surrounding log lines                 │
+│  • /api/facets - Get aggregations (ERROR/WARN counts)       │
+│  • /api/patterns - Get top error patterns                   │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Web UI (Single Page)                     │
+│  • Search with syntax highlighting                          │
+│  • Faceted navigation (levels, patterns, users)             │
+│  • Dashboard widgets with auto-refresh                      │
+│  • Bulk log download from URLs                              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-LogSearch converts raw logs into structured searchable events stored in Lucene.
+**Key Design Decisions:**
+
+1. **Date-partitioned indexes**: Each day gets its own Lucene index, enabling parallel search across date ranges
+2. **Code-aware tokenization**: Java class names, exceptions, and packages are split intelligently for natural search
+3. **Zero-config format detection**: Built-in patterns for common server types (WebLogic, WebSphere, Tomcat)
+4. **Single-JAR deployment**: No external dependencies — just run the JAR file
 
 ---
 
@@ -286,7 +374,12 @@ LogSearch converts raw logs into structured searchable events stored in Lucene.
 
 # Performance
 
-LogSearch is designed for **enterprise-scale workloads**:
+LogSearch is designed for **enterprise-scale workloads**.
+
+**Performance measured on:**
+- 8-core CPU
+- 16GB RAM
+- SSD storage
 
 ### Throughput
 - **1-2 GB/day**: Optimized for small teams
