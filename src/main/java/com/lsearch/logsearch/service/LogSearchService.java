@@ -88,9 +88,61 @@ public class LogSearchService {
         }
     }
 
+    /**
+     * Preprocesses the query to properly quote field values containing spaces.
+     * This fixes issues where paths like "sourceFile:/path/with spaces/file.log"
+     * would fail to parse correctly.
+     */
+    /**
+     * Preprocesses the query to properly quote field values containing spaces.
+     * This fixes issues where paths like "sourceFile:/path/with spaces/file.log"
+     * would fail to parse correctly.
+     */
+    private String preprocessQuery(String queryText) {
+        if (queryText == null || queryText.trim().isEmpty()) {
+            return queryText;
+        }
+
+        // Pattern to match field:value where value may contain spaces
+        // Uses negative lookahead to match everything except space before boolean operators
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+            "\\b(sourceFile|correlationId|messageId|flowName|endpoint):((?:(?!\\s+(?:AND|OR|NOT)\\b)[^\"\\s]|(?!\\s+(?:AND|OR|NOT)\\b)\\s)+)",
+            java.util.regex.Pattern.CASE_INSENSITIVE
+        );
+
+        java.util.regex.Matcher matcher = pattern.matcher(queryText);
+        StringBuffer result = new StringBuffer();
+
+        while (matcher.find()) {
+            String field = matcher.group(1);
+            String value = matcher.group(2).trim(); // Trim any trailing spaces
+
+            // Quote the value if it contains spaces and isn't already quoted
+            if (value.contains(" ") && !value.startsWith("\"") && !value.endsWith("\"")) {
+                // Need to escape special chars in replacement ($ and \)
+                String quotedValue = java.util.regex.Matcher.quoteReplacement(field + ":\"" + value + "\"");
+                matcher.appendReplacement(result, quotedValue);
+                log.debug("Quoted field value: {}:\"{}\"", field, value);
+            } else {
+                // Keep as-is
+                matcher.appendReplacement(result, matcher.group(0));
+            }
+        }
+        matcher.appendTail(result);
+
+        String processed = result.toString();
+        if (!processed.equals(queryText)) {
+            log.debug("Preprocessed query: [{}] -> [{}]", queryText, processed);
+        }
+        return processed;
+    }
+
     public SearchResult search(String queryText, ZonedDateTime startTime, ZonedDateTime endTime,
                                int page, int pageSize, List<String> indexes, List<String> environments) throws Exception {
         long startMs = System.currentTimeMillis();
+
+        // Preprocess query to handle paths with spaces
+        queryText = preprocessQuery(queryText);
 
         boolean chunkingEnabled = properties.getChunking() != null && properties.getChunking().isEnabled();
 

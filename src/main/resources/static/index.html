@@ -55,7 +55,7 @@
         .facet-item {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
             gap: 8px;
             padding: 6px 10px;
             margin-bottom: 3px;
@@ -79,10 +79,13 @@
 
         .facet-label {
             flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            min-width: 0;
+            overflow: visible;
+            word-break: break-all;
+            overflow-wrap: break-word;
+            white-space: normal;
             color: #495057;
+            line-height: 1.3;
         }
 
         .facet-count {
@@ -93,6 +96,7 @@
             font-size: 10px;
             font-weight: 600;
             flex-shrink: 0;
+            margin-top: 2px;
         }
 
         /* Pattern Fingerprinting Styles */
@@ -414,6 +418,19 @@
             padding: 15px;
             background: #fafafa;
             overflow-x: auto;
+        }
+
+        .log-entry-message.truncated {
+            position: relative;
+        }
+
+        .message-truncate-indicator {
+            color: #007bff;
+            font-style: italic;
+            font-size: 11px;
+            margin-top: 8px;
+            display: block;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
 
         .pagination {
@@ -1281,6 +1298,20 @@
                 width: 100%;
             }
         }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #0366d6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -1346,7 +1377,7 @@
                     <div class="button-group">
                         <button class="btn-primary" onclick="search()">Search</button>
                         <button class="btn-primary btn-save-search" onclick="saveCurrentSearch()">Save Search</button>
-                        <button id="viewFlowBtn" class="btn-flow hidden" onclick="openFlowDiagram()">📊 View Flow</button>
+                        <button id="viewFlowBtn" class="btn-flow hidden" onclick="openFlowDiagram()">View Flow</button>
                     </div>
                 </div>
             </div>
@@ -1431,12 +1462,12 @@
 
             <!-- Re-Index Modal -->
             <div id="reindexModal" class="modal-overlay" onclick="closeReindexModal(event)">
-                <div class="dashboard-modal-content" onclick="event.stopPropagation()" style="max-width: 500px;">
+                <div class="dashboard-modal-content" onclick="event.stopPropagation()" style="max-width: 600px;">
                     <div class="modal-header">
                         <h3>Re-Index Logs</h3>
                         <button class="modal-close" onclick="closeReindexModal()">&times;</button>
                     </div>
-                    <div class="modal-body" style="padding: 20px;">
+                    <div id="reindexSetup" class="modal-body" style="padding: 20px;">
                         <p style="margin-bottom: 15px; color: #586069; font-size: 14px;">
                             Choose whether to perform an incremental or full re-index of your log files.
                         </p>
@@ -1453,9 +1484,20 @@
                             <strong>Note:</strong> Incremental re-index (unchecked) only indexes new files that haven't been indexed yet.
                         </p>
                     </div>
-                    <div class="modal-actions">
+                    <div id="reindexProgress" class="modal-body" style="padding: 20px; display: none;">
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <div class="spinner" style="margin: 0 auto 15px;"></div>
+                            <div id="reindexStatus" style="font-weight: 600; color: #0366d6; margin-bottom: 10px;">Indexing in progress...</div>
+                            <div id="reindexDetails" style="font-size: 13px; color: #586069;"></div>
+                        </div>
+                        <div id="reindexLog" style="max-height: 300px; overflow-y: auto; background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; line-height: 1.6;"></div>
+                    </div>
+                    <div id="reindexActions" class="modal-actions">
                         <button class="btn-secondary" onclick="closeReindexModal()">Cancel</button>
                         <button class="btn-primary" onclick="confirmReindex()">Start Re-Index</button>
+                    </div>
+                    <div id="reindexComplete" class="modal-actions" style="display: none;">
+                        <button class="btn-primary" onclick="closeReindexModal()">Close</button>
                     </div>
                 </div>
             </div>
@@ -1737,7 +1779,7 @@
                 patternGroup.className = 'facet-group';
 
                 const title = document.createElement('h3');
-                title.textContent = '🎯 TOP ERROR PATTERNS';
+                title.textContent = 'TOP PATTERNS';
                 title.style.color = '#d97706';
                 patternGroup.appendChild(title);
 
@@ -2128,6 +2170,12 @@
                     ? `<span class="file-path-display" title="${escapeHtml(entry.sourceFile)}"><strong>File:</strong> <span style="color: #666; font-size: 0.9em;">${escapeHtml(entry.sourceFile.substring(0, entry.sourceFile.lastIndexOf('/') + 1))}</span>${escapeHtml(fileName)}:${entry.lineNumber}</span>`
                     : `<span class="file-path-display"><strong>File:</strong> ${escapeHtml(entry.sourceFile)}:${entry.lineNumber}</span>`;
 
+                // Truncate message for preview (show first 8 lines)
+                const messagePreview = truncateMessageByLines(entry.message, 8);
+                const truncateIndicator = messagePreview.truncated
+                    ? `<span class="message-truncate-indicator">... (${messagePreview.totalLines - 8} more lines - click to view full message in context)</span>`
+                    : '';
+
                 entryDiv.innerHTML = `
                     <div class="log-entry-header">
                         <span><strong>Time:</strong> ${timestamp}</span>
@@ -2136,7 +2184,7 @@
                         ${loggerInfo}
                         ${fileDisplay}
                     </div>
-                    <div class="log-entry-message">${highlightLogMessage(entry.message)}</div>
+                    <div class="log-entry-message ${messagePreview.truncated ? 'truncated' : ''}">${highlightLogMessage(messagePreview.text)}${truncateIndicator}</div>
                 `;
 
                 // Add click handler to show context and highlight flow box if panel is open
@@ -2183,25 +2231,48 @@
         }
 
         function triggerIndexing() {
-            // Show the re-index modal instead of confirm
+            // Reset modal to initial state
+            document.getElementById('reindexSetup').style.display = 'block';
+            document.getElementById('reindexActions').style.display = 'flex';
+            document.getElementById('reindexProgress').style.display = 'none';
+            document.getElementById('reindexComplete').style.display = 'none';
             document.getElementById('fullReindexCheckbox').checked = false;
+
+            // Show modal
             document.getElementById('reindexModal').classList.add('show');
         }
 
         function closeReindexModal(event) {
             if (!event || event.target === document.getElementById('reindexModal')) {
                 document.getElementById('reindexModal').classList.remove('show');
+
+                // Reset modal state after a short delay
+                setTimeout(() => {
+                    document.getElementById('reindexSetup').style.display = 'block';
+                    document.getElementById('reindexActions').style.display = 'flex';
+                    document.getElementById('reindexProgress').style.display = 'none';
+                    document.getElementById('reindexComplete').style.display = 'none';
+                }, 300);
             }
         }
 
         async function confirmReindex() {
             const fullReindex = document.getElementById('fullReindexCheckbox').checked;
 
-            // Close modal
-            document.getElementById('reindexModal').classList.remove('show');
+            // Show progress UI
+            document.getElementById('reindexSetup').style.display = 'none';
+            document.getElementById('reindexActions').style.display = 'none';
+            document.getElementById('reindexProgress').style.display = 'block';
 
-            // Show status
-            showStatus(fullReindex ? 'Full re-indexing in progress...' : 'Indexing in progress...', 'info');
+            const statusDiv = document.getElementById('reindexStatus');
+            const detailsDiv = document.getElementById('reindexDetails');
+            const logDiv = document.getElementById('reindexLog');
+
+            statusDiv.textContent = fullReindex ? 'Performing full re-index...' : 'Indexing new files...';
+            detailsDiv.textContent = 'Please wait while we process your log files...';
+            logDiv.innerHTML = '';
+
+            const startTime = Date.now();
 
             try {
                 const params = new URLSearchParams();
@@ -2209,16 +2280,55 @@
                     params.append('fullReindex', 'true');
                 }
 
+                logDiv.innerHTML += `<div style="color: #0366d6;">[${new Date().toLocaleTimeString()}] Starting ${fullReindex ? 'full' : 'incremental'} re-index...</div>`;
+
                 const response = await fetch(`/api/index?${params}`, { method: 'POST' });
                 const result = await response.json();
 
+                const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
                 if (result.success) {
-                    showStatus(`${result.message}. ${result.indexedFiles} files indexed.`, 'success');
+                    logDiv.innerHTML += `<div style="color: #28a745;">[${new Date().toLocaleTimeString()}] Indexing completed successfully</div>`;
+                    logDiv.innerHTML += `<div style="color: #586069;">[${new Date().toLocaleTimeString()}] Files indexed: ${result.indexedFiles}</div>`;
+                    logDiv.innerHTML += `<div style="color: #586069;">[${new Date().toLocaleTimeString()}] Duration: ${duration}s</div>`;
+                    if (result.message) {
+                        logDiv.innerHTML += `<div style="color: #586069;">[${new Date().toLocaleTimeString()}] ${result.message}</div>`;
+                    }
+
+                    statusDiv.textContent = 'Indexing Complete!';
+                    statusDiv.style.color = '#28a745';
+                    detailsDiv.textContent = `Successfully indexed ${result.indexedFiles} file(s) in ${duration} seconds`;
+
+                    // Hide spinner
+                    document.querySelector('#reindexProgress .spinner').style.display = 'none';
+
+                    // Show close button
+                    document.getElementById('reindexComplete').style.display = 'flex';
                 } else {
-                    showStatus('Indexing failed: ' + result.message, 'error');
+                    logDiv.innerHTML += `<div style="color: #d73a49;">[${new Date().toLocaleTimeString()}] ✗ Indexing failed: ${result.message}</div>`;
+
+                    statusDiv.textContent = 'Indexing Failed';
+                    statusDiv.style.color = '#d73a49';
+                    detailsDiv.textContent = result.message;
+
+                    // Hide spinner
+                    document.querySelector('#reindexProgress .spinner').style.display = 'none';
+
+                    // Show close button
+                    document.getElementById('reindexComplete').style.display = 'flex';
                 }
             } catch (error) {
-                showStatus('Indexing failed: ' + error.message, 'error');
+                logDiv.innerHTML += `<div style="color: #d73a49;">[${new Date().toLocaleTimeString()}] ✗ Error: ${error.message}</div>`;
+
+                statusDiv.textContent = 'Indexing Failed';
+                statusDiv.style.color = '#d73a49';
+                detailsDiv.textContent = 'An error occurred during indexing';
+
+                // Hide spinner
+                document.querySelector('#reindexProgress .spinner').style.display = 'none';
+
+                // Show close button
+                document.getElementById('reindexComplete').style.display = 'flex';
             }
         }
 
@@ -2226,6 +2336,21 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function truncateMessageByLines(message, maxLines = 8) {
+            const lines = message.split('\n');
+
+            // Filter out empty lines at the start for counting purposes
+            const nonEmptyLines = lines.filter(line => line.trim().length > 0);
+
+            if (lines.length <= maxLines) {
+                return { text: message, truncated: false };
+            }
+
+            // Show at least maxLines, ensuring we show meaningful content
+            const truncated = lines.slice(0, maxLines).join('\n');
+            return { text: truncated, truncated: true, totalLines: lines.length };
         }
 
         function highlightLogMessage(message) {
