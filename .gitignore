@@ -45,10 +45,18 @@ nohup.out
 
 ### Lucene indexes ###
 .log-search/
+# Includes day-based indexes and metadata index for chunking:
+# .log-search/indexes/2026-03-*/
+# .log-search/indexes/metadata/chunks/
 
 ### Compressed log files ###
 *.gz
 *.zip
+
+### Implementation status files (optional - uncomment to ignore) ###
+# ACTIVATION_COMPLETE.md
+# INTEGRATION_COMPLETE.md
+# IMPLEMENTATION_SUMMARY.md
 
 ### macOS ###
 .DS_Store

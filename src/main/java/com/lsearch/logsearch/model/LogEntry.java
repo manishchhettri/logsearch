@@ -23,6 +23,9 @@ public class LogEntry {
     private String flowName;
     private String endpoint;
 
+    // Metadata-first search architecture support
+    private String chunkId;
+
     public LogEntry() {
     }
 
@@ -166,6 +169,14 @@ public class LogEntry {
         this.endpoint = endpoint;
     }
 
+    public String getChunkId() {
+        return chunkId;
+    }
+
+    public void setChunkId(String chunkId) {
+        this.chunkId = chunkId;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -186,6 +197,7 @@ public class LogEntry {
         private String messageId;
         private String flowName;
         private String endpoint;
+        private String chunkId;
 
         public Builder timestamp(ZonedDateTime timestamp) {
             this.timestamp = timestamp;
@@ -262,6 +274,11 @@ public class LogEntry {
             return this;
         }
 
+        public Builder chunkId(String chunkId) {
+            this.chunkId = chunkId;
+            return this;
+        }
+
         public LogEntry build() {
             LogEntry entry = new LogEntry(timestamp, level, thread, logger, user, message, sourceFile, lineNumber);
             entry.setIndexName(indexName);
@@ -271,6 +288,7 @@ public class LogEntry {
             entry.setMessageId(messageId);
             entry.setFlowName(flowName);
             entry.setEndpoint(endpoint);
+            entry.setChunkId(chunkId);
             return entry;
         }
     }

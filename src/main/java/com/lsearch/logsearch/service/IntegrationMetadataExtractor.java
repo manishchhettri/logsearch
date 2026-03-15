@@ -1,10 +1,14 @@
 package com.lsearch.logsearch.service;
 
+import com.lsearch.logsearch.model.ChunkMetadata;
 import com.lsearch.logsearch.model.LogEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -134,5 +138,101 @@ public class IntegrationMetadataExtractor {
      */
     public boolean isIntegrationPlatformLog(String message) {
         return detectIntegrationPlatform(message) != null;
+    }
+
+    /**
+     * Enrich chunk metadata with integration platform information from all log entries
+     */
+    public void enrichMetadata(ChunkMetadata metadata, List<LogEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return;
+        }
+
+        Set<String> correlationIds = new HashSet<>();
+        Set<String> messageIds = new HashSet<>();
+        Set<String> flowNames = new HashSet<>();
+        Set<String> endpoints = new HashSet<>();
+
+        String detectedPlatform = null;
+        int iibCount = 0;
+        int mqCount = 0;
+        int esbCount = 0;
+
+        for (LogEntry entry : entries) {
+            if (entry.getMessage() == null) continue;
+
+            String message = entry.getMessage();
+
+            // Extract correlation IDs
+            Matcher corrMatcher = CORRELATION_ID_PATTERN.matcher(message);
+            while (corrMatcher.find()) {
+                String corrId = corrMatcher.group(1);
+                if (corrId != null && !corrId.isEmpty()) {
+                    correlationIds.add(corrId);
+                }
+            }
+
+            // Extract message IDs
+            Matcher msgMatcher = MESSAGE_ID_PATTERN.matcher(message);
+            while (msgMatcher.find()) {
+                String msgId = msgMatcher.group(1);
+                if (msgId != null && !msgId.isEmpty()) {
+                    messageIds.add(msgId);
+                }
+            }
+
+            // Extract flow names
+            Matcher flowMatcher = FLOW_NAME_PATTERN.matcher(message);
+            while (flowMatcher.find()) {
+                String flow = flowMatcher.group(1);
+                if (flow != null && !flow.isEmpty()) {
+                    flowNames.add(flow);
+                }
+            }
+
+            // Extract endpoints
+            Matcher endpointMatcher = ENDPOINT_PATTERN.matcher(message);
+            while (endpointMatcher.find()) {
+                String endpoint = endpointMatcher.group(1);
+                if (endpoint != null && !endpoint.isEmpty()) {
+                    endpoints.add(endpoint);
+                }
+            }
+
+            // Count platform occurrences
+            if (IIB_PATTERN.matcher(message).find()) {
+                iibCount++;
+            }
+            if (MQ_PATTERN.matcher(message).find()) {
+                mqCount++;
+            }
+            if (ESB_PATTERN.matcher(message).find()) {
+                esbCount++;
+            }
+        }
+
+        // Determine dominant platform
+        if (iibCount > mqCount && iibCount > esbCount && iibCount > 0) {
+            detectedPlatform = "IIB";
+        } else if (mqCount > iibCount && mqCount > esbCount && mqCount > 0) {
+            detectedPlatform = "MQ";
+        } else if (esbCount > 0) {
+            detectedPlatform = "ESB";
+        }
+
+        // Update chunk metadata
+        metadata.setIntegrationPlatform(detectedPlatform);
+        metadata.setHasCorrelationId(!correlationIds.isEmpty());
+        metadata.setHasMessageId(!messageIds.isEmpty());
+        metadata.setCorrelationIds(correlationIds);
+        metadata.setMessageIds(messageIds);
+        metadata.setFlowNames(flowNames);
+        metadata.setEndpoints(endpoints);
+
+        if (detectedPlatform != null) {
+            log.debug("Chunk {}: Detected platform={}, correlationIds={}, flows={}, endpoints={}",
+                metadata.getChunkId(), detectedPlatform, correlationIds.size(),
+                flowNames.size(), endpoints.size());
+        }
     }
 }

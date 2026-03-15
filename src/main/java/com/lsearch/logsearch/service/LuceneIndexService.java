@@ -5,8 +5,14 @@ import com.lsearch.logsearch.model.LogEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.lucene.document.*;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
+import org.apache.lucene.queryparser.classic.ParseException;
+import org.apache.lucene.search.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.springframework.stereotype.Service;
@@ -17,7 +23,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -133,7 +143,100 @@ public class LuceneIndexService {
             doc.add(new TextField("endpointText", entry.getEndpoint(), Field.Store.NO)); // For searching
         }
 
+        // Chunk ID field (for metadata-first search architecture)
+        if (entry.getChunkId() != null && !entry.getChunkId().isEmpty()) {
+            doc.add(new StringField("chunkId", entry.getChunkId(), Field.Store.YES));
+        }
+
         writer.addDocument(doc);
+    }
+
+    /**
+     * Search a specific chunk by ID (for metadata-first search architecture)
+     */
+    public List<LogEntry> searchChunk(String chunkId, String queryString, int limit)
+            throws IOException, ParseException {
+
+        List<LogEntry> results = new ArrayList<>();
+
+        // Extract date from chunkId (format: service::date::chunk-HH)
+        String[] parts = chunkId.split("::");
+        if (parts.length < 2) {
+            log.warn("Invalid chunkId format: {}", chunkId);
+            return results;
+        }
+
+        String date = parts[1];  // Extract date part
+        Path indexPath = Paths.get(properties.getIndexDir(), date);
+
+        if (!Files.exists(indexPath)) {
+            log.debug("Index not found for chunk {}", chunkId);
+            return results;
+        }
+
+        try (Directory directory = FSDirectory.open(indexPath);
+             IndexReader reader = DirectoryReader.open(directory)) {
+
+            IndexSearcher searcher = new IndexSearcher(reader);
+
+            // Build query: combine chunk filter with user query
+            BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder();
+
+            // Chunk ID filter (required)
+            queryBuilder.add(new TermQuery(new Term("chunkId", chunkId)), BooleanClause.Occur.MUST);
+
+            // Text search query (if provided)
+            if (queryString != null && !queryString.trim().isEmpty()) {
+                String[] fields = {"message", "user", "level", "thread", "logger", "patternText",
+                                   "correlationIdText", "messageIdText", "flowNameText", "endpointText"};
+                MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer);
+                Query textQuery = parser.parse(queryString);
+                queryBuilder.add(textQuery, BooleanClause.Occur.MUST);
+            }
+
+            Query finalQuery = queryBuilder.build();
+
+            // Execute search
+            TopDocs topDocs = searcher.search(finalQuery, limit);
+
+            // Collect results
+            for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                Document doc = searcher.doc(scoreDoc.doc);
+                results.add(documentToLogEntry(doc));
+            }
+
+        } catch (Exception e) {
+            log.error("Error searching chunk: {}", chunkId, e);
+        }
+
+        return results;
+    }
+
+    private LogEntry documentToLogEntry(Document doc) {
+        long timestampMs = doc.getField("timestamp").numericValue().longValue();
+        ZonedDateTime timestamp = ZonedDateTime.ofInstant(
+                java.time.Instant.ofEpochMilli(timestampMs),
+                ZoneId.of(properties.getTimezone())
+        );
+
+        return LogEntry.builder()
+                .timestamp(timestamp)
+                .level(doc.get("level"))
+                .thread(doc.get("thread"))
+                .logger(doc.get("logger"))
+                .user(doc.get("user"))
+                .message(doc.get("message"))
+                .sourceFile(doc.get("sourceFile"))
+                .lineNumber(doc.getField("lineNumber").numericValue().longValue())
+                .indexName(doc.get("indexName"))
+                .environment(doc.get("environment"))
+                .chunkId(doc.get("chunkId"))
+                .correlationId(doc.get("correlationId"))
+                .messageId(doc.get("messageId"))
+                .flowName(doc.get("flowName"))
+                .endpoint(doc.get("endpoint"))
+                .integrationPlatform(doc.get("integrationPlatform"))
+                .build();
     }
 
     private IndexWriter getOrCreateIndexWriter(String date) throws IOException {
@@ -205,6 +308,13 @@ public class LuceneIndexService {
                 .forEach(path -> {
                     try {
                         String dirName = path.getFileName().toString();
+
+                        // Skip non-date directories (like "metadata")
+                        if (!dirName.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                            log.debug("Skipping non-date directory: {}", dirName);
+                            return;
+                        }
+
                         LocalDate indexDate = LocalDate.parse(dirName, DateTimeFormatter.ISO_DATE);
 
                         if (indexDate.isBefore(cutoffDate)) {
@@ -237,9 +347,10 @@ public class LuceneIndexService {
             return;
         }
 
-        // Delete all subdirectories (each date's index)
+        // Delete all subdirectories (each date's index) BUT skip metadata directory
         Files.list(indexDir)
                 .filter(Files::isDirectory)
+                .filter(path -> !path.getFileName().toString().equals("metadata")) // Skip metadata directory
                 .forEach(path -> {
                     try {
                         deleteDirectory(path);
@@ -249,7 +360,7 @@ public class LuceneIndexService {
                     }
                 });
 
-        log.info("All indexes deleted");
+        log.info("All indexes deleted (metadata preserved)");
     }
 
     private void deleteDirectory(Path path) throws IOException {

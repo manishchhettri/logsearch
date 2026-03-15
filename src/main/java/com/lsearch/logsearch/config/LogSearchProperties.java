@@ -26,6 +26,16 @@ public class LogSearchProperties {
     private int watchInterval;
     private boolean enableFallback = true;
 
+    // Chunking configuration
+    private ChunkingConfig chunking = new ChunkingConfig();
+
+    // Service name configuration
+    private String serviceName = "default-service";
+    private String serviceNamePattern = "([^/]+)/.*\\.log";
+
+    // Metadata configuration
+    private MetadataConfig metadata = new MetadataConfig();
+
     // Hierarchical environment-based configuration
     private Map<String, EnvironmentConfig> environments;
 
@@ -171,5 +181,168 @@ public class LogSearchProperties {
             }
         }
         return indexes;
+    }
+
+    public ChunkingConfig getChunking() {
+        return chunking;
+    }
+
+    public void setChunking(ChunkingConfig chunking) {
+        this.chunking = chunking;
+    }
+
+    public String getServiceName() {
+        return serviceName;
+    }
+
+    public void setServiceName(String serviceName) {
+        this.serviceName = serviceName;
+    }
+
+    public String getServiceNamePattern() {
+        return serviceNamePattern;
+    }
+
+    public void setServiceNamePattern(String serviceNamePattern) {
+        this.serviceNamePattern = serviceNamePattern;
+    }
+
+    public MetadataConfig getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(MetadataConfig metadata) {
+        this.metadata = metadata;
+    }
+
+    // Nested configuration classes
+
+    public static class ChunkingConfig {
+        private boolean enabled = true;
+        private String strategy = "ADAPTIVE";
+        private AdaptiveConfig adaptive = new AdaptiveConfig();
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getStrategy() {
+            return strategy;
+        }
+
+        public void setStrategy(String strategy) {
+            this.strategy = strategy;
+        }
+
+        public AdaptiveConfig getAdaptive() {
+            return adaptive;
+        }
+
+        public void setAdaptive(AdaptiveConfig adaptive) {
+            this.adaptive = adaptive;
+        }
+    }
+
+    public static class AdaptiveConfig {
+        private int targetSizeMb = 200;
+        private int minDurationMinutes = 15;
+        private int maxDurationHours = 6;
+
+        public int getTargetSizeMb() {
+            return targetSizeMb;
+        }
+
+        public void setTargetSizeMb(int targetSizeMb) {
+            this.targetSizeMb = targetSizeMb;
+        }
+
+        public int getMinDurationMinutes() {
+            return minDurationMinutes;
+        }
+
+        public void setMinDurationMinutes(int minDurationMinutes) {
+            this.minDurationMinutes = minDurationMinutes;
+        }
+
+        public int getMaxDurationHours() {
+            return maxDurationHours;
+        }
+
+        public void setMaxDurationHours(int maxDurationHours) {
+            this.maxDurationHours = maxDurationHours;
+        }
+    }
+
+    public static class MetadataConfig {
+        private int topTermsCount = 50;
+        private boolean enablePackageExtraction = true;
+        private boolean enableExceptionExtraction = true;
+        private BloomFilterConfig bloomFilter = new BloomFilterConfig();
+
+        public int getTopTermsCount() {
+            return topTermsCount;
+        }
+
+        public void setTopTermsCount(int topTermsCount) {
+            this.topTermsCount = topTermsCount;
+        }
+
+        public boolean isEnablePackageExtraction() {
+            return enablePackageExtraction;
+        }
+
+        public void setEnablePackageExtraction(boolean enablePackageExtraction) {
+            this.enablePackageExtraction = enablePackageExtraction;
+        }
+
+        public boolean isEnableExceptionExtraction() {
+            return enableExceptionExtraction;
+        }
+
+        public void setEnableExceptionExtraction(boolean enableExceptionExtraction) {
+            this.enableExceptionExtraction = enableExceptionExtraction;
+        }
+
+        public BloomFilterConfig getBloomFilter() {
+            return bloomFilter;
+        }
+
+        public void setBloomFilter(BloomFilterConfig bloomFilter) {
+            this.bloomFilter = bloomFilter;
+        }
+    }
+
+    public static class BloomFilterConfig {
+        private boolean enabled = true;
+        private double falsePositiveRate = 0.01;
+        private int estimatedTermsPerChunk = 10000;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public double getFalsePositiveRate() {
+            return falsePositiveRate;
+        }
+
+        public void setFalsePositiveRate(double falsePositiveRate) {
+            this.falsePositiveRate = falsePositiveRate;
+        }
+
+        public int getEstimatedTermsPerChunk() {
+            return estimatedTermsPerChunk;
+        }
+
+        public void setEstimatedTermsPerChunk(int estimatedTermsPerChunk) {
+            this.estimatedTermsPerChunk = estimatedTermsPerChunk;
+        }
     }
 }

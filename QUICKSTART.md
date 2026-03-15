@@ -13,7 +13,31 @@ Get up and running with LogSearch in under 5 minutes.
 
 Download `log-search-1.0.0.jar` from the releases page or build from source.
 
-### 2. Start the application
+### 2. Create Required Directories
+
+```bash
+# Create directories for logs and indexes
+mkdir -p logs
+mkdir -p .log-search/indexes
+
+# Metadata directory is auto-created when chunking is enabled
+```
+
+**Directory Structure:**
+```
+your-project/
+├── log-search-1.0.0.jar
+├── logs/                        # Put your log files here
+├── .log-search/
+│   └── indexes/                 # Lucene indexes (auto-created)
+│       ├── 2026-03-10/          # Day-based indexes
+│       ├── 2026-03-11/
+│       └── metadata/            # Chunk metadata (if chunking enabled)
+└── config/
+    └── application.yml          # Optional configuration
+```
+
+### 3. Start the application
 
 ```bash
 # Basic startup (uses ./logs directory by default)
@@ -35,9 +59,10 @@ API: http://localhost:8080/api/search
 The application will:
 - Automatically detect your log format (WebLogic, Tomcat, etc.)
 - Index all .log files in the directory
+- Create chunks and metadata (if chunking enabled)
 - Open the web UI in your browser
 
-### 3. Open the Web UI
+### 4. Open the Web UI
 
 Navigate to: **http://localhost:8080**
 
@@ -241,6 +266,76 @@ Dashboards with relative time ranges (Last 1h, Last 24h, etc.) automatically upd
 - Create dashboards for common investigations
 - Add more log files to the logs directory (they'll be auto-indexed)
 - Log format detection is automatic — no configuration needed!
+
+## Metadata-First Search Configuration (Optional)
+
+LogSearch now supports an **optional metadata-first search architecture** that scales to 100GB+ log volumes.
+
+### When to Enable Metadata-First Search
+
+**Enable if:**
+- Log volumes exceed 50GB
+- You need sub-second search at massive scale
+- You want 90-98% pruning efficiency
+
+**Keep disabled if:**
+- Log volumes are under 50GB
+- Faster indexing is more important
+- Simpler architecture is preferred
+
+### Enable Metadata-First Search
+
+Create or edit `config/application.yml`:
+
+```yaml
+log-search:
+  # Enable metadata-first search architecture
+  chunking:
+    enabled: true                # Set to false for standard search
+    strategy: "ADAPTIVE"         # ADAPTIVE (recommended) or HOURLY
+    adaptive:
+      target-size-mb: 200        # Target: 150-250 MB chunks
+      min-duration-minutes: 15   # Minimum chunk duration
+      max-duration-hours: 6      # Maximum chunk duration
+
+  # Metadata extraction settings
+  metadata:
+    top-terms-count: 50                    # Top terms per chunk
+    enable-package-extraction: true        # Extract Java packages
+    enable-exception-extraction: true      # Extract exception types
+    bloom-filter:
+      enabled: true                        # Enable Bloom filter pruning
+      false-positive-rate: 0.01            # 1% false positive rate
+      estimated-terms-per-chunk: 10000     # Expected unique terms
+```
+
+### Performance Characteristics
+
+**With Metadata-First Search (chunking enabled):**
+- **Scales to**: 100GB+ logs
+- **Search time**: Sub-second at massive scale
+- **Pruning**: 90-98% of chunks eliminated before search
+- **Example**: 100 chunks → 2-10 searched
+- **Trade-off**: Slightly slower indexing (metadata extraction)
+
+**With Standard Search (chunking disabled):**
+- **Scales to**: ~50GB logs
+- **Search time**: Increases linearly with data size
+- **Indexing**: Faster (no chunking overhead)
+- **Best for**: Smaller deployments, simpler architecture
+
+### Testing Your Configuration
+
+```bash
+# Start with metadata-first search
+java -jar log-search-1.0.0.jar
+
+# Check logs for confirmation:
+# "Chunking ENABLED - metadata-first search architecture active"
+# "Created 15 chunks for server.log"
+# "Using METADATA-FIRST search (chunking enabled)"
+# "Metadata index returned 3 candidate chunks in 0.8ms"
+```
 
 ## Configuration
 

@@ -83,190 +83,89 @@ log-search:
   # using auto-detected timestamps or file metadata
   enable-fallback: true
 
-  # Hierarchical environment-based configuration
-  # Organize by environment first, then systems within each environment
-  environments:
-    # Development Environment 1
-    d1:
-      display-name: "Development 1"
-      enabled: true
-      systems:
-        # CMS - Multi-server example (4 servers)
-        - name: cms
-          display-name: "CMS"
-          target-path: ./logs/d1/cms
-          file-pattern: "server-\\d{8}\\.log"
-          requires-auth: false
-          retention-days: 7
-          service-type: APPLICATION
-          servers:
-            - name: "Server 1"
-              url: "http://d1-cms1.server.com/logs/"
-              enabled: true
-            - name: "Server 2"
-              url: "http://d1-cms2.server.com/logs/"
-              enabled: true
-            - name: "Server 3"
-              url: "http://d1-cms3.server.com/logs/"
-              enabled: true
-            - name: "Server 4"
-              url: "http://d1-cms4.server.com/logs/"
-              enabled: true
+  # Chunking configuration (Metadata-first search architecture)
+  chunking:
+    enabled: true                     # Enable chunk-based indexing for better performance
+    strategy: "ADAPTIVE"              # ADAPTIVE (recommended) or HOURLY
 
-        # Payment Service - Multi-server example (3 servers)
-        - name: payment
-          display-name: "Payment Service"
-          target-path: ./logs/d1/payment
-          file-pattern: "server-\\d{8}\\.log"
-          requires-auth: false
-          retention-days: 7
-          service-type: APPLICATION
-          servers:
-            - name: "Node 1"
-              url: "http://d1-payment1.server.com/logs/"
-            - name: "Node 2"
-              url: "http://d1-payment2.server.com/logs/"
-            - name: "Node 3"
-              url: "http://d1-payment3.server.com/logs/"
+    # Adaptive strategy parameters (used when strategy: ADAPTIVE)
+    adaptive:
+      target-size-mb: 200             # Target chunk size: 200 MB (range: 150-250 MB)
+      min-duration-minutes: 15        # Minimum chunk duration: 15 minutes
+      max-duration-hours: 6           # Maximum chunk duration: 6 hours
 
-        # OBMan - Single server (backward compatible)
-        - name: obman
-          display-name: "OBMan"
-          url: "http://d1.server.com/logs/obman/"
-          target-path: ./logs/d1/obman
-          file-pattern: ".*\\.log"
-          requires-auth: false
-          retention-days: 7
-          service-type: APPLICATION
+  # Service name configuration (for multi-service environments)
+  service-name: "default-service"     # Default service name if not detected from path
+  service-name-pattern: "([^/]+)/.*\\.log"  # Regex to extract service from file path
 
-    # Development Environment 2
-    d2:
-      display-name: "Development 2"
-      enabled: true
-      systems:
-        # CMS - Single server
-        - name: cms
-          display-name: "CMS"
-          url: "http://d2.server.com/logs/cms/"
-          target-path: ./logs/d2/cms
-          file-pattern: "server-\\d{8}\\.log"
-          requires-auth: false
-          retention-days: 7
-          service-type: APPLICATION
+  # Metadata extraction options
+  metadata:
+    top-terms-count: 50               # Number of top terms to extract per chunk
+    enable-package-extraction: true   # Extract Java package names from stack traces
+    enable-exception-extraction: true # Extract exception types for better error search
 
-        # Payment Service - 2 servers
-        - name: payment
-          display-name: "Payment Service"
-          target-path: ./logs/d2/payment
-          file-pattern: "server-\\d{8}\\.log"
-          requires-auth: false
-          retention-days: 7
-          service-type: APPLICATION
-          servers:
-            - name: "Primary"
-              url: "http://d2-payment1.server.com/logs/"
-            - name: "Secondary"
-              url: "http://d2-payment2.server.com/logs/"
+    # Bloom filter configuration (probabilistic term existence checking)
+    bloom-filter:
+      enabled: true                   # Enable Bloom filters for efficient term pruning
+      false-positive-rate: 0.01       # 1% false positive rate (lower = larger filter)
+      estimated-terms-per-chunk: 10000  # Expected unique terms (auto-adjusted)
 
-        # OBMan - Single server
-        - name: obman
-          display-name: "OBMan"
-          url: "http://d2.server.com/logs/obman/"
-          target-path: ./logs/d2/obman
-          file-pattern: ".*\\.log"
-          requires-auth: false
-          retention-days: 7
-          service-type: APPLICATION
+  # Using legacy single-directory mode
+  # When no environments/download-locations are configured,
+  # IndexConfigService creates a default "main" index from logs-dir
+  #
+  # To use explicit multi-index mode, configure environments below
+  # or use download-locations configuration
 
-        # IIB - Single server
-        - name: iib
-          display-name: "IBM Integration Bus"
-          url: "http://d2.server.com/logs/iib/"
-          target-path: ./logs/d2/iib
-          file-pattern: ".*\\.log"
-          requires-auth: false
-          retention-days: 7
-          service-type: INTEGRATION
+  # Multi-Index Configuration (Optional)
+  # Uncomment and configure to index multiple log sources
+  #
+  # environments:
+  #   - name: "production"
+  #     display-name: "Production Server"
+  #     path: "./logs/production"
+  #     file-pattern: "server-\\d{8}\\.log"
+  #     auto-watch: true
+  #
+  #   - name: "staging"
+  #     display-name: "Staging Environment"
+  #     path: "./logs/staging"
+  #     file-pattern: "app-.*\\.log"
+  #     auto-watch: true
+  #
+  #   - name: "development"
+  #     display-name: "Development Logs"
+  #     path: "./logs/dev"
+  #     file-pattern: ".*\\.log"
+  #     auto-watch: false
 
-    # UAT Environment 1
-    uat1:
-      display-name: "UAT 1"
-      enabled: true
-      systems:
-        - name: cms
-          display-name: "CMS"
-          url: "http://uat1.server.com/logs/cms/"
-          target-path: ./logs/uat1/cms
-          file-pattern: "server-\\d{8}\\.log"
-          requires-auth: true
-          default-username: "viewer"
-          retention-days: 30
-          service-type: APPLICATION
-
-        - name: payment
-          display-name: "Payment Service"
-          url: "http://uat1.server.com/logs/payment/"
-          target-path: ./logs/uat1/payment
-          file-pattern: "server-\\d{8}\\.log"
-          requires-auth: true
-          default-username: "viewer"
-          retention-days: 30
-          service-type: APPLICATION
-
-        - name: obman
-          display-name: "OBMan"
-          url: "http://uat1.server.com/logs/obman/"
-          target-path: ./logs/uat1/obman
-          file-pattern: ".*\\.log"
-          requires-auth: true
-          default-username: "viewer"
-          retention-days: 30
-          service-type: APPLICATION
-
-        - name: iib
-          display-name: "IBM Integration Bus"
-          url: "http://uat1.server.com/logs/iib/"
-          target-path: ./logs/uat1/iib
-          file-pattern: ".*\\.log"
-          requires-auth: true
-          default-username: "viewer"
-          retention-days: 30
-          service-type: INTEGRATION
-
-    # Production Environment 1 (disabled by default for safety)
-    prod1:
-      display-name: "Production 1"
-      enabled: false
-      systems:
-        - name: cms
-          display-name: "CMS"
-          url: "http://prod1.server.com/logs/cms/"
-          target-path: ./logs/prod1/cms
-          file-pattern: "server-\\d{8}\\.log"
-          requires-auth: true
-          default-username: "readonly"
-          retention-days: 90
-          service-type: APPLICATION
-
-        - name: payment
-          display-name: "Payment Service"
-          url: "http://prod1.server.com/logs/payment/"
-          target-path: ./logs/prod1/payment
-          file-pattern: "server-\\d{8}\\.log"
-          requires-auth: true
-          default-username: "readonly"
-          retention-days: 90
-          service-type: APPLICATION
-
-        - name: iib
-          display-name: "IBM Integration Bus"
-          url: "http://prod1.server.com/logs/iib/"
-          target-path: ./logs/prod1/iib
-          file-pattern: ".*\\.log"
-          requires-auth: true
-          default-username: "readonly"
-          retention-days: 90
-          service-type: INTEGRATION
+  # Integration Platform Log Downloads (Optional)
+  # Configure to automatically download logs from integration platforms
+  #
+  # download-locations:
+  #   - name: "mulesoft-prod"
+  #     display-name: "MuleSoft Production"
+  #     environment: "production"
+  #     platform: "mulesoft"                # mulesoft, boomi, etc.
+  #     base-url: "https://anypoint.mulesoft.com"
+  #     organization-id: "your-org-id"
+  #     environment-id: "your-env-id"
+  #     client-id: "${MULESOFT_CLIENT_ID}"
+  #     client-secret: "${MULESOFT_CLIENT_SECRET}"
+  #     download-dir: "./logs/mulesoft/production"
+  #     enabled: true
+  #     auto-watch: true
+  #
+  #   - name: "boomi-prod"
+  #     display-name: "Boomi Production"
+  #     environment: "production"
+  #     platform: "boomi"
+  #     account-id: "your-account-id"
+  #     username: "${BOOMI_USERNAME}"
+  #     password: "${BOOMI_PASSWORD}"
+  #     download-dir: "./logs/boomi/production"
+  #     enabled: true
+  #     auto-watch: true
 
 logging:
   level:

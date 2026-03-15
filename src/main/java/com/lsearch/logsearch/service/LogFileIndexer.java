@@ -1,6 +1,9 @@
 package com.lsearch.logsearch.service;
 
 import com.lsearch.logsearch.config.LogSearchProperties;
+import com.lsearch.logsearch.model.Chunk;
+import com.lsearch.logsearch.model.ChunkIdentifier;
+import com.lsearch.logsearch.model.ChunkMetadata;
 import com.lsearch.logsearch.model.IndexConfig;
 import com.lsearch.logsearch.model.LogEntry;
 import org.slf4j.Logger;
@@ -14,6 +17,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,18 +37,27 @@ public class LogFileIndexer {
     private final LuceneIndexService indexService;
     private final IndexConfigService indexConfigService;
     private final IntegrationMetadataExtractor integrationExtractor;
+    private final ChunkingStrategy chunkingStrategy;
+    private final ChunkMetadataExtractor chunkMetadataExtractor;
+    private final MetadataIndexService metadataIndexService;
 
     // Thread-safe set for parallel indexing
     private final Set<String> indexedFiles = ConcurrentHashMap.newKeySet();
 
     public LogFileIndexer(LogSearchProperties properties, LogParser logParser,
                           LuceneIndexService indexService, IndexConfigService indexConfigService,
-                          IntegrationMetadataExtractor integrationExtractor) {
+                          IntegrationMetadataExtractor integrationExtractor,
+                          ChunkingStrategy chunkingStrategy,
+                          ChunkMetadataExtractor chunkMetadataExtractor,
+                          MetadataIndexService metadataIndexService) {
         this.properties = properties;
         this.logParser = logParser;
         this.indexService = indexService;
         this.indexConfigService = indexConfigService;
         this.integrationExtractor = integrationExtractor;
+        this.chunkingStrategy = chunkingStrategy;
+        this.chunkMetadataExtractor = chunkMetadataExtractor;
+        this.metadataIndexService = metadataIndexService;
     }
 
     @PostConstruct
@@ -54,6 +69,13 @@ public class LogFileIndexer {
 
     public void indexAllLogs() throws IOException {
         log.info("Starting multi-index indexing...");
+        boolean chunkingEnabled = properties.getChunking() != null && properties.getChunking().isEnabled();
+
+        if (chunkingEnabled) {
+            log.info("Chunking ENABLED - metadata-first search architecture active");
+        } else {
+            log.info("Chunking DISABLED - using standard indexing");
+        }
 
         for (IndexConfig indexConfig : indexConfigService.getEnabledIndexes()) {
             log.info("Indexing: {} ({}) [environment: {}]",
@@ -63,6 +85,13 @@ public class LogFileIndexer {
 
         // Commit all index writers
         indexService.commit();
+
+        // Commit metadata index if chunking is enabled
+        if (chunkingEnabled && metadataIndexService != null) {
+            metadataIndexService.commit();
+            log.info("Metadata index committed. Total chunks: {}", metadataIndexService.getTotalChunkCount());
+        }
+
         indexService.deleteOldIndexes();
 
         log.info("Multi-index indexing completed. Total files indexed: {}", indexedFiles.size());
@@ -111,6 +140,13 @@ public class LogFileIndexer {
             }
 
             indexService.commit();
+
+            // Commit metadata index if chunking is enabled
+            boolean chunkingEnabled = properties.getChunking() != null && properties.getChunking().isEnabled();
+            if (chunkingEnabled && metadataIndexService != null) {
+                metadataIndexService.commit();
+            }
+
             indexService.deleteOldIndexes();
 
         } catch (Exception e) {
@@ -153,6 +189,19 @@ public class LogFileIndexer {
         log.info("Indexing log file: {} (index: {}, environment: {})",
                 filename, indexConfig.getName(), indexConfig.getEnvironment());
 
+        boolean chunkingEnabled = properties.getChunking() != null && properties.getChunking().isEnabled();
+
+        if (chunkingEnabled) {
+            indexLogFileWithChunking(logFile, indexConfig, filename, absolutePath);
+        } else {
+            indexLogFileStandard(logFile, indexConfig, filename, absolutePath);
+        }
+    }
+
+    /**
+     * Standard indexing (without chunking) - entry by entry
+     */
+    private void indexLogFileStandard(Path logFile, IndexConfig indexConfig, String filename, String absolutePath) {
         AtomicLong lineNumber = new AtomicLong(0);
         AtomicLong indexedLines = new AtomicLong(0);
         AtomicLong skippedLines = new AtomicLong(0);
@@ -172,42 +221,30 @@ public class LogFileIndexer {
                 LogEntry parsedEntry = null;
 
                 if (isNewEntry) {
-                    // This line matches the primary pattern - it's definitely a new entry
                     parsedEntry = logParser.parseLine(line, filename, lineNumber.get(), logFile);
                 } else if (isContinuation && currentEntry != null) {
-                    // This looks like a continuation line and we have a current entry
-                    // Append to current entry instead of parsing
                     if (continuationLines.length() > 0) {
                         continuationLines.append("\n");
                     }
                     continuationLines.append(line);
-                    // Continue to next line without creating new entry
                     continue;
                 } else if (properties.isEnableFallback()) {
-                    // Not a primary pattern, not a continuation (or no current entry)
-                    // Try fallback parsing for truly standalone lines
                     parsedEntry = logParser.parseLine(line, filename, lineNumber.get(), logFile);
                 } else {
-                    // No match, no fallback - skip this line
                     skippedLines.incrementAndGet();
                     continue;
                 }
 
-                // If we have a parsed entry, it's a new log entry
                 if (parsedEntry != null) {
-                    // Index the previous entry first (if it exists)
                     if (currentEntry != null) {
                         try {
-                            // Append any continuation lines to the message
                             if (continuationLines.length() > 0) {
                                 String fullMessage = currentEntry.getMessage() + "\n" + continuationLines.toString();
                                 currentEntry.setMessage(fullMessage);
                                 continuationLines.setLength(0);
                             }
-                            // Set index metadata
                             currentEntry.setIndexName(indexConfig.getName());
                             currentEntry.setEnvironment(indexConfig.getEnvironment());
-                            // Extract integration platform metadata
                             integrationExtractor.enrichLogEntry(currentEntry);
                             indexService.indexLogEntry(currentEntry);
                             indexedLines.incrementAndGet();
@@ -216,28 +253,23 @@ public class LogFileIndexer {
                             skippedLines.incrementAndGet();
                         }
                     }
-
-                    // Start tracking this new entry
                     currentEntry = parsedEntry;
                 }
 
-                // Commit every 10000 lines to avoid memory issues
                 if (indexedLines.get() % 10000 == 0 && indexedLines.get() > 0) {
                     indexService.commit();
                 }
             }
 
-            // Index the last entry if it exists
+            // Index the last entry
             if (currentEntry != null) {
                 try {
                     if (continuationLines.length() > 0) {
                         String fullMessage = currentEntry.getMessage() + "\n" + continuationLines.toString();
                         currentEntry.setMessage(fullMessage);
                     }
-                    // Set index metadata
                     currentEntry.setIndexName(indexConfig.getName());
                     currentEntry.setEnvironment(indexConfig.getEnvironment());
-                    // Extract integration platform metadata
                     integrationExtractor.enrichLogEntry(currentEntry);
                     indexService.indexLogEntry(currentEntry);
                     indexedLines.incrementAndGet();
@@ -250,12 +282,170 @@ public class LogFileIndexer {
             indexService.commit();
             indexedFiles.add(absolutePath);
 
-            log.info("Completed indexing {}: {} total lines, {} indexed entries, {} skipped lines (multi-line messages included)",
+            log.info("Completed indexing {}: {} total lines, {} indexed entries, {} skipped lines",
                     filename, lineNumber.get(), indexedLines.get(), skippedLines.get());
 
         } catch (IOException e) {
             log.error("Failed to index file: {}", filename, e);
         }
+    }
+
+    /**
+     * Chunking-aware indexing - groups entries into chunks with metadata
+     */
+    private void indexLogFileWithChunking(Path logFile, IndexConfig indexConfig, String filename, String absolutePath) {
+        AtomicLong lineNumber = new AtomicLong(0);
+        AtomicLong skippedLines = new AtomicLong(0);
+
+        try (BufferedReader reader = Files.newBufferedReader(logFile)) {
+            String line;
+            LogEntry currentEntry = null;
+            StringBuilder continuationLines = new StringBuilder();
+            List<LogEntry> allEntries = new ArrayList<>();
+
+            // First pass: parse all log entries from file
+            while ((line = reader.readLine()) != null) {
+                lineNumber.incrementAndGet();
+
+                boolean isNewEntry = logParser.matchesPrimaryPattern(line);
+                boolean isContinuation = logParser.looksLikeContinuationLine(line);
+
+                LogEntry parsedEntry = null;
+
+                if (isNewEntry) {
+                    parsedEntry = logParser.parseLine(line, filename, lineNumber.get(), logFile);
+                } else if (isContinuation && currentEntry != null) {
+                    if (continuationLines.length() > 0) {
+                        continuationLines.append("\n");
+                    }
+                    continuationLines.append(line);
+                    continue;
+                } else if (properties.isEnableFallback()) {
+                    parsedEntry = logParser.parseLine(line, filename, lineNumber.get(), logFile);
+                } else {
+                    skippedLines.incrementAndGet();
+                    continue;
+                }
+
+                if (parsedEntry != null) {
+                    if (currentEntry != null) {
+                        if (continuationLines.length() > 0) {
+                            String fullMessage = currentEntry.getMessage() + "\n" + continuationLines.toString();
+                            currentEntry.setMessage(fullMessage);
+                            continuationLines.setLength(0);
+                        }
+                        currentEntry.setIndexName(indexConfig.getName());
+                        currentEntry.setEnvironment(indexConfig.getEnvironment());
+                        integrationExtractor.enrichLogEntry(currentEntry);
+                        allEntries.add(currentEntry);
+                    }
+                    currentEntry = parsedEntry;
+                }
+            }
+
+            // Add last entry
+            if (currentEntry != null) {
+                if (continuationLines.length() > 0) {
+                    String fullMessage = currentEntry.getMessage() + "\n" + continuationLines.toString();
+                    currentEntry.setMessage(fullMessage);
+                }
+                currentEntry.setIndexName(indexConfig.getName());
+                currentEntry.setEnvironment(indexConfig.getEnvironment());
+                integrationExtractor.enrichLogEntry(currentEntry);
+                allEntries.add(currentEntry);
+            }
+
+            log.info("Parsed {} entries from {}, creating chunks...", allEntries.size(), filename);
+
+            // Second pass: create chunks and index with metadata
+            String serviceName = extractServiceName(indexConfig.getName());
+            List<Chunk> chunks = chunkingStrategy.createChunks(allEntries);
+
+            log.info("Created {} chunks for {}", chunks.size(), filename);
+
+            // Assign identifiers to chunks
+            int sequenceNumber = 0;
+            for (Chunk chunk : chunks) {
+                if (chunk.isEmpty()) {
+                    continue;
+                }
+
+                // Get first entry timestamp to determine chunk hour
+                ZonedDateTime firstTimestamp = chunk.getEntries().get(0).getTimestamp();
+                ChunkIdentifier identifier = ChunkIdentifier.adaptive(
+                    serviceName,
+                    firstTimestamp.toLocalDate(),
+                    firstTimestamp.getHour(),
+                    sequenceNumber++
+                );
+                chunk.setIdentifier(identifier);
+
+                // Set start/end times if not already set
+                if (chunk.getStartTime() == null) {
+                    chunk.setStartTime(firstTimestamp);
+                }
+                if (chunk.getEndTime() == null) {
+                    chunk.setEndTime(chunk.getEntries().get(chunk.getEntries().size() - 1).getTimestamp());
+                }
+            }
+
+            // Index chunks with metadata
+            for (Chunk chunk : chunks) {
+                if (chunk.isEmpty() || chunk.getIdentifier() == null) {
+                    continue;
+                }
+
+                try {
+                    String chunkId = chunk.getIdentifier().getChunkId();
+
+                    // Extract chunk metadata
+                    ChunkMetadata metadata = chunkMetadataExtractor.extractMetadata(chunkId, chunk.getEntries());
+
+                    // Index metadata in metadata index
+                    metadataIndexService.indexChunkMetadata(metadata);
+
+                    // Set chunkId on all entries and index them
+                    for (LogEntry entry : chunk.getEntries()) {
+                        entry.setChunkId(chunkId);
+                        indexService.indexLogEntry(entry);
+                    }
+
+                    log.debug("Indexed chunk {} with {} entries", chunkId, chunk.getEntries().size());
+                } catch (IOException e) {
+                    log.error("Failed to index chunk for {}: {}", filename, e.getMessage());
+                }
+            }
+
+            indexService.commit();
+            indexedFiles.add(absolutePath);
+
+            log.info("Completed chunked indexing {}: {} total lines, {} entries, {} chunks",
+                    filename, lineNumber.get(), allEntries.size(), chunks.size());
+
+        } catch (IOException e) {
+            log.error("Failed to index file: {}", filename, e);
+        }
+    }
+
+    /**
+     * Extract service name from index name or use default
+     */
+    private String extractServiceName(String indexName) {
+        if (indexName == null || indexName.isEmpty()) {
+            return properties.getServiceName();
+        }
+
+        // Try to extract service name using pattern
+        if (properties.getServiceNamePattern() != null) {
+            Pattern pattern = Pattern.compile(properties.getServiceNamePattern());
+            java.util.regex.Matcher matcher = pattern.matcher(indexName);
+            if (matcher.find() && matcher.groupCount() >= 1) {
+                return matcher.group(1);
+            }
+        }
+
+        // Default to index name
+        return indexName;
     }
 
     public void fullReindex() throws IOException {
@@ -266,6 +456,13 @@ public class LogFileIndexer {
 
         // Delete all existing indexes
         indexService.deleteAllIndexes();
+
+        // Clear metadata index if chunking is enabled
+        boolean chunkingEnabled = properties.getChunking() != null && properties.getChunking().isEnabled();
+        if (chunkingEnabled && metadataIndexService != null) {
+            metadataIndexService.clearMetadataIndex();
+            log.info("Metadata index cleared");
+        }
 
         // Re-index everything
         indexAllLogs();
