@@ -122,10 +122,17 @@ public class LuceneIndexService {
         doc.add(new TextField("message", entry.getMessage(), Field.Store.YES));
 
         // Extract and index pattern for fingerprinting/analytics
+        // Lucene StringField has a max term length of 32766 bytes
+        // Truncate pattern to 1500 chars to avoid indexing errors with long stacktraces
+        // This still captures exception type + top stack frames for fingerprinting
         String pattern = PatternExtractor.extractPattern(entry.getMessage());
         if (PatternExtractor.isMeaningfulPattern(pattern)) {
-            doc.add(new StringField("pattern", pattern, Field.Store.YES));
-            doc.add(new TextField("patternText", pattern, Field.Store.NO)); // For searching
+            // Truncate pattern if it exceeds safe length (full message remains searchable)
+            String safePattern = pattern.length() > 1500
+                ? pattern.substring(0, 1500) + "..."
+                : pattern;
+            doc.add(new StringField("pattern", safePattern, Field.Store.YES));
+            doc.add(new TextField("patternText", safePattern, Field.Store.NO)); // For searching
         }
 
         // Source file and line number for reference
