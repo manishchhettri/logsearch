@@ -2544,6 +2544,540 @@ Initialized parallel search with 8 threads
 
 ---
 
+## Search Result Deduplication
+
+### Overview
+
+LogSearch implements intelligent deduplication to prevent duplicate log entries in search results when the same log file exists in multiple locations (e.g., active logs, archives, backups).
+
+### Problem Statement
+
+In production environments, log files are often:
+- **Archived** to separate directories for retention
+- **Backed up** to different locations
+- **Copied** during deployment processes
+
+Example directory structure:
+```
+logs/
+├── access.log              ← Active log
+├── archive/
+│   └── access.log          ← Monthly archive copy
+└── backup/
+    └── access.log          ← Backup copy
+```
+
+Without deduplication, the same event appears 3 times in results, causing:
+- Misleading hit counts (300 hits vs. 100 unique events)
+- Confusing analytics (error rates appear 3x higher)
+- Poor user experience
+
+### Solution: Content-Based Deduplication
+
+**Unique Key Generation**:
+
+Each log entry is assigned a unique key based on:
+
+```java
+private String generateUniqueKey(LogEntry entry) {
+    long timestamp = entry.getTimestamp().toInstant().toEpochMilli();
+    long lineNumber = entry.getLineNumber();
+    String messagePrefix = entry.getMessage().substring(0, 100); // First 100 chars
+
+    return timestamp + "|" + lineNumber + "|" + messagePrefix.hashCode();
+}
+```
+
+**Key Components:**
+
+1. **Timestamp** (epoch milliseconds) - Identifies the exact moment the log event occurred
+2. **Line Number** - Position in the original log file
+3. **Message Hash** (first 100 characters) - Content fingerprint for efficiency
+
+**Excluded from Key:**
+- **Source File Path** — Intentionally excluded so identical entries from different file copies are recognized as duplicates
+
+### Implementation
+
+**Standard Search (LogSearchService.java:135-155)**:
+
+```java
+// Collect results with deduplication
+Map<String, LogEntry> uniqueResults = new LinkedHashMap<>();
+
+for (Future<DaySearchResult> future : futures) {
+    DaySearchResult result = future.get(30, TimeUnit.SECONDS);
+
+    // Deduplicate by adding to map with unique key
+    for (LogEntry entry : result.entries) {
+        String uniqueKey = generateUniqueKey(entry);
+        uniqueResults.putIfAbsent(uniqueKey, entry);  // Keep first occurrence
+    }
+}
+
+// Convert to list and sort
+List<LogEntry> allResults = new ArrayList<>(uniqueResults.values());
+allResults.sort((a, b) -> b.getTimestamp().compareTo(a.getTimestamp()));
+
+long totalHits = allResults.size();  // Total hits reflects unique entries
+```
+
+### Performance Characteristics
+
+**Time Complexity:**
+- O(n) where n = total search results (including duplicates)
+- LinkedHashMap operations are O(1) average case
+- Minimal overhead compared to non-deduplicated search
+
+**Space Complexity:**
+- O(u) where u = unique results
+- Stores only unique entries in memory
+- More memory-efficient than storing duplicates
+
+**Worst Case:**
+- Same file indexed 3 times → 3x raw results
+- After deduplication → 1x unique results
+- Memory savings: 66%
+
+### Full Path Display
+
+**Backend (LogFileIndexer.java:247)**:
+
+```java
+// Normalize path to remove ./ and ../ components
+String absolutePath = logFile.toAbsolutePath().normalize().toString();
+
+// Store full path as sourceFile
+entry.setSourceFile(absolutePath);
+```
+
+**Frontend (index.html:2114-2124)**:
+
+```javascript
+// Extract filename from path
+const fileName = entry.sourceFile.split('/').pop();
+const isFullPath = entry.sourceFile.includes('/');
+
+// Display with smart formatting
+const fileDisplay = isFullPath
+    ? `<span title="${entry.sourceFile}">
+         <strong>File:</strong>
+         <span style="color: #666;">${pathDirectory}</span>
+         ${fileName}:${entry.lineNumber}
+       </span>`
+    : `<span><strong>File:</strong> ${entry.sourceFile}:${entry.lineNumber}</span>`;
+```
+
+### Context Viewer Path Handling
+
+**Solution (LogSearchController.java:131-138)**:
+
+```java
+// Check if sourceFile is already absolute
+Path logFilePath = Paths.get(sourceFile);
+if (!logFilePath.isAbsolute()) {
+    // If relative, combine with logs directory
+    logFilePath = Paths.get(properties.getLogsDir(), sourceFile);
+}
+
+// Normalize to resolve ./ and ../
+logFilePath = logFilePath.normalize();
+```
+
+**Handles:**
+- Absolute paths: `/Users/logs/access.log` → Used directly
+- Relative paths: `access.log` → Prepend logs directory
+- Normalized paths: `./logs/../logs/file.log` → `/logs/file.log`
+
+### Testing
+
+Comprehensive tests in `LogSearchServiceTest.java` verify:
+- ✅ Identical entries generate same key
+- ✅ Same content from different files generates same key
+- ✅ Different timestamps generate different keys
+- ✅ Different line numbers generate different keys
+- ✅ Different messages generate different keys
+- ✅ Null values handled gracefully
+- ✅ Long messages (>100 chars) handled efficiently
+
+### Design Decisions
+
+**Why Deduplicate at Search Time?**
+
+**Alternative 1: Deduplicate at Index Time**
+- ❌ Requires tracking all indexed files globally
+- ❌ Cannot distinguish intentional copies from duplicates
+- ❌ Breaks if logs are moved/renamed
+
+**Alternative 2: Skip Duplicate Files at Index Time**
+- ✅ Already implemented (file signature deduplication)
+- ❌ Only works if files are exact copies (same size)
+- ❌ Doesn't handle files copied after indexing
+
+**Chosen: Search-Time Deduplication**
+- ✅ Works regardless of how files were indexed
+- ✅ No global state required
+- ✅ Handles dynamic file operations
+- ✅ Minimal performance overhead
+- ✅ Simple and reliable
+
+**Why Exclude sourceFile from Key?**
+
+Including sourceFile would prevent deduplication:
+```java
+// BAD: Would create different keys for same event
+String key = timestamp + "|" + sourceFile + "|" + lineNumber;
+
+// access.log:    "1234567890|access.log|100"
+// archived.log:  "1234567890|archived.log|100"  ← Different key!
+```
+
+Excluding sourceFile allows deduplication while still displaying the actual source:
+```java
+// GOOD: Same key, deduplication works
+String key = timestamp + "|" + lineNumber + "|" + messageHash;
+
+// Both files: "1234567890|100|456789"  ← Same key ✓
+// Display: Shows first occurrence's sourceFile
+```
+
+**Why First 100 Characters of Message?**
+
+**Chosen: Prefix hash**
+```java
+messagePrefix = entry.getMessage().substring(0, 100);
+messageHash = messagePrefix.hashCode();
+```
+- ✅ Fast (process only 100 chars)
+- ✅ Good uniqueness (messages typically differ in first 100 chars)
+- ✅ Compact key (integer hash vs. 100-char string)
+
+**Collision Analysis:**
+
+Probability of collision (same timestamp, line number, AND same first 100 chars):
+- **Timestamp collision**: Millisecond precision = very rare
+- **Line number collision**: Must be same position in file
+- **Message prefix collision**: First 100 chars must match
+
+**Real-world:** Effectively zero probability of false deduplication.
+
+### User-Visible Changes
+
+**Before Deduplication:**
+
+```
+Search: "database timeout"
+Results: 15 hits
+
+1. [12:03:00] ERROR - Database timeout          (access.log:234)
+2. [12:03:00] ERROR - Database timeout          (archived.log:234)
+3. [12:03:00] ERROR - Database timeout          (backup.log:234)
+4. [12:04:00] WARN - Connection pool exhausted  (access.log:456)
+5. [12:04:00] WARN - Connection pool exhausted  (archived.log:456)
+...
+```
+
+**After Deduplication:**
+
+```
+Search: "database timeout"
+Results: 5 unique hits (deduplicated)
+
+1. [12:03:00] ERROR - Database timeout
+   File: /opt/logs/archive/access.log:234
+
+2. [12:04:00] WARN - Connection pool exhausted
+   File: /opt/logs/access.log:456
+...
+```
+
+**Improvements:**
+- ✅ Clean results (no duplicates)
+- ✅ Accurate counts (5 unique events vs. 15 total hits)
+- ✅ Full path visibility (users know exact source)
+- ✅ Better analytics (true error rates)
+
+---
+
+## Multi-Index Architecture
+
+### Overview
+
+LogSearch supports **multi-index management**, enabling organization of logs from different sources with index-based filtering similar to Splunk.
+
+### Current Limitation vs. Solution
+
+**Single log directory (current):**
+```yaml
+log-search:
+  logs-dir: ./logs  # All logs in one location
+```
+
+**Multi-index support (new):**
+```
+Logs from different sources:
+- Payment Service → /var/log/payment-service/
+- Order Service → /var/log/order-service/
+- Auth Service → /var/log/auth-service/
+- IIB Integration → /opt/ibm/iib/logs/
+- Database Logs → /var/log/postgresql/
+```
+
+Each source can be:
+- Independently configured
+- Searchable by index name
+- Visible in UI for filtering
+- Independently managed (retention, patterns, etc.)
+
+### Index Concept with Environment Support
+
+An **index** is a named collection of logs from a specific source location.
+
+**Two-Dimensional Filtering:**
+
+LogSearch supports filtering by **both index and environment**:
+
+```
+Dimension 1: Application/Service (logical grouping)
+  - payment, order, auth, iib, etc.
+
+Dimension 2: Environment (deployment instance)
+  - d1, d2, d3 (dev environments)
+  - uat1, uat2 (UAT environments)
+  - prod1, prod2 (production environments)
+```
+
+**Search Matrix:**
+
+```
+               | d1   | d2   | d3   | uat1  | prod1 |
+---------------|------|------|------|-------|-------|
+payment        |  ✓   |  ✓   |  ✓   |   ✓   |   ✓   |
+order          |  ✓   |      |      |   ✓   |   ✓   |
+auth           |      |      |      |   ✓   |   ✓   |
+iib            |      |      |      |   ✓   |   ✓   |
+```
+
+**Query Examples:**
+
+```
+# All payment errors in prod
+index:payment-prod1 level:ERROR
+
+# Payment errors across all environments
+index:payment-* level:ERROR
+
+# All prod errors (any application)
+env:prod1 level:ERROR
+
+# UAT errors for payment and order
+env:uat1 index:(payment-uat1 OR order-uat1) level:ERROR
+
+# Specific environment + specific service
+env:d1 AND index:payment-d1 timeout
+```
+
+### Configuration Model
+
+**application.yml:**
+
+```yaml
+log-search:
+  # Legacy single-directory mode (backward compatible)
+  logs-dir: ./logs  # Used if no indexes configured
+
+  # NEW: Multi-index configuration with environment support
+  indexes:
+    # Payment Service - Multiple Environments
+    - name: payment-d1
+      display-name: "Payment Service (D1)"
+      path: /var/log/d1/payment-service
+      file-pattern: "*.log"
+      enabled: true
+      auto-watch: false
+      retention-days: 7
+      service-type: application
+      environment: d1        # NEW: Environment tag
+
+    - name: payment-prod1
+      display-name: "Payment Service (PROD1)"
+      path: /var/log/prod1/payment-service
+      file-pattern: "*.log"
+      enabled: true
+      auto-watch: false
+      retention-days: 90     # Keep prod logs longer
+      service-type: application
+      environment: prod1
+
+    - name: order-uat1
+      display-name: "Order Service (UAT1)"
+      path: /var/log/uat1/order-service
+      file-pattern: "order-*.log"
+      enabled: true
+      auto-watch: false
+      retention-days: 30
+      service-type: application
+      environment: uat1
+
+    - name: iib
+      display-name: "IBM Integration Bus"
+      path: /opt/ibm/iib/logs
+      file-pattern: "*.log"
+      enabled: true
+      auto-watch: false
+      retention-days: 30
+      service-type: integration
+```
+
+### Index Storage Structure
+
+```
+.log-search/
+├── indexes/
+│   ├── metadata/
+│   │   └── chunks/
+│   │
+│   └── content/
+│       ├── payment-d1/          # Index: payment-d1
+│       │   ├── 2026-03-12/
+│       │   └── 2026-03-13/
+│       │
+│       ├── payment-prod1/       # Index: payment-prod1
+│       │   ├── 2026-03-12/
+│       │   └── 2026-03-13/
+│       │
+│       ├── order-uat1/          # Index: order-uat1
+│       │   ├── 2026-03-12/
+│       │   └── 2026-03-13/
+│       │
+│       └── iib/                 # Index: iib
+│           └── 2026-03-12/
+```
+
+### Search Query Syntax
+
+**Filter by Index:**
+
+```
+# Search all indexes (default)
+error
+
+# Search specific index
+index:payment-prod1 error
+
+# Search multiple indexes
+index:(payment-prod1 OR order-prod1) error
+
+# Wildcard index search (all payment indexes across all environments)
+index:payment-* error
+```
+
+**Filter by Environment:**
+
+```
+# Search specific environment (all applications in prod1)
+env:prod1 error
+
+# Search multiple environments
+env:(uat1 OR prod1) error
+
+# All dev environments
+env:d* error
+
+# Exclude production
+env:* NOT env:prod* error
+```
+
+**Combined Index + Environment Filtering:**
+
+```
+# Payment errors in production
+index:payment-* env:prod1 level:ERROR
+
+# All applications in UAT with timeouts
+env:uat1 timeout
+
+# Payment or Order in dev environments
+env:d* index:(payment-* OR order-*) error
+
+# Specific correlation across all prod services
+env:prod1 correlationId:txn-abc-123
+```
+
+### Real-World Query Examples
+
+**1. Compare Same Issue Across Environments:**
+```
+# Search payment timeouts in all environments to compare behavior
+index:payment-* timeout
+
+Results grouped by environment:
+- payment-d1: 5 occurrences
+- payment-uat1: 12 occurrences
+- payment-prod1: 3 occurrences
+```
+
+**2. Production-Only Error Search:**
+```
+# Find all production errors across all services
+env:prod1 level:ERROR
+```
+
+**3. Service-Specific Across Environments:**
+```
+# All payment service errors (dev + uat + prod)
+index:payment-* level:ERROR
+
+# Payment errors only in non-prod
+index:payment-* NOT env:prod* level:ERROR
+```
+
+**4. Integration Platform Errors:**
+```
+# IIB errors in production
+index:iib-prod1 level:ERROR
+
+# All integration platforms in UAT
+env:uat1 service-type:integration level:ERROR
+```
+
+**5. Correlation Tracing Across Environments:**
+```
+# Find correlation ID in UAT environment
+env:uat1 correlationId:txn-test-456
+
+# Same correlation in prod (for comparison)
+env:prod1 correlationId:txn-prod-789
+```
+
+### Benefits
+
+1. **Splunk-Like Experience**: Familiar index-based filtering for users coming from Splunk
+2. **Organizational Structure**: Clear separation of logs by application, service, or tenant
+3. **Independent Management**: Each index can have different retention policies, file patterns, auto-watch settings
+4. **Multi-Tenant Support**: Different tenants/customers can have isolated indexes
+5. **Performance**: Search only relevant indexes, reducing search space
+6. **Staged Archives**: Mix of hot (current), warm (recent), and cold (archived) data
+
+### Migration Strategy
+
+**Backward Compatibility:**
+
+Existing deployments without index configuration:
+- System automatically creates "main" index from `logs-dir`
+- All existing functionality continues to work
+- No breaking changes
+
+**Migration path:**
+```
+Step 1: Deploy new version (uses legacy mode if no indexes configured)
+Step 2: Add index configuration to application.yml
+Step 3: Restart application
+Step 4: Indexes appear in UI automatically
+```
+
+---
+
 ## Future Enhancements
 
 ### Potential Improvements (Phase 3+)

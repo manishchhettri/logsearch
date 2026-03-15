@@ -1,11 +1,14 @@
 package com.lsearch.logsearch.service;
 
 import com.lsearch.logsearch.config.LogSearchProperties;
+import com.lsearch.logsearch.model.LogEntry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.lang.reflect.Method;
 import java.nio.file.Path;
+import java.time.ZonedDateTime;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -415,5 +418,280 @@ class LogSearchServiceTest {
         }
 
         return terms;
+    }
+
+    // ========================================================================
+    // Deduplication Tests
+    // ========================================================================
+
+    /**
+     * Test that generateUniqueKey creates consistent keys for identical log entries
+     */
+    @Test
+    void testGenerateUniqueKey_IdenticalEntries_SameKey() throws Exception {
+        LogSearchService searchService = createSearchService();
+        Method generateUniqueKeyMethod = LogSearchService.class.getDeclaredMethod("generateUniqueKey", LogEntry.class);
+        generateUniqueKeyMethod.setAccessible(true);
+
+        ZonedDateTime timestamp = ZonedDateTime.now();
+
+        LogEntry entry1 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message("POST /app/submit 500")
+                .level("ERROR")
+                .build();
+
+        LogEntry entry2 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message("POST /app/submit 500")
+                .level("ERROR")
+                .build();
+
+        String key1 = (String) generateUniqueKeyMethod.invoke(searchService, entry1);
+        String key2 = (String) generateUniqueKeyMethod.invoke(searchService, entry2);
+
+        assertEquals(key1, key2, "Identical entries should generate the same unique key");
+    }
+
+    /**
+     * Test that entries from different source files (e.g., access.log vs archived.log)
+     * but with same content generate SAME key (deduplication should work)
+     */
+    @Test
+    void testGenerateUniqueKey_SameContentDifferentFiles_SameKey() throws Exception {
+        LogSearchService searchService = createSearchService();
+        Method generateUniqueKeyMethod = LogSearchService.class.getDeclaredMethod("generateUniqueKey", LogEntry.class);
+        generateUniqueKeyMethod.setAccessible(true);
+
+        ZonedDateTime timestamp = ZonedDateTime.now();
+
+        // Same log entry from access.log
+        LogEntry entry1 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message("POST /app/submit 500")
+                .level("ERROR")
+                .build();
+
+        // Same log entry from archived.log (archived copy)
+        LogEntry entry2 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("archived.log")  // Different file name
+                .lineNumber(100)
+                .message("POST /app/submit 500")
+                .level("ERROR")
+                .build();
+
+        String key1 = (String) generateUniqueKeyMethod.invoke(searchService, entry1);
+        String key2 = (String) generateUniqueKeyMethod.invoke(searchService, entry2);
+
+        // These should generate the SAME key because they're the same log entry
+        // just from different file copies (deduplication should work)
+        assertEquals(key1, key2, "Same entry from different file copies should generate same key for deduplication");
+    }
+
+    /**
+     * Test that entries with different timestamps generate different keys
+     */
+    @Test
+    void testGenerateUniqueKey_DifferentTimestamps_DifferentKeys() throws Exception {
+        LogSearchService searchService = createSearchService();
+        Method generateUniqueKeyMethod = LogSearchService.class.getDeclaredMethod("generateUniqueKey", LogEntry.class);
+        generateUniqueKeyMethod.setAccessible(true);
+
+        LogEntry entry1 = LogEntry.builder()
+                .timestamp(ZonedDateTime.now())
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message("POST /app/submit 500")
+                .build();
+
+        LogEntry entry2 = LogEntry.builder()
+                .timestamp(ZonedDateTime.now().plusSeconds(1))  // Different timestamp
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message("POST /app/submit 500")
+                .build();
+
+        String key1 = (String) generateUniqueKeyMethod.invoke(searchService, entry1);
+        String key2 = (String) generateUniqueKeyMethod.invoke(searchService, entry2);
+
+        assertNotEquals(key1, key2, "Entries with different timestamps should have different keys");
+    }
+
+    /**
+     * Test that entries with different line numbers generate different keys
+     */
+    @Test
+    void testGenerateUniqueKey_DifferentLineNumbers_DifferentKeys() throws Exception {
+        LogSearchService searchService = createSearchService();
+        Method generateUniqueKeyMethod = LogSearchService.class.getDeclaredMethod("generateUniqueKey", LogEntry.class);
+        generateUniqueKeyMethod.setAccessible(true);
+
+        ZonedDateTime timestamp = ZonedDateTime.now();
+
+        LogEntry entry1 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message("POST /app/submit 500")
+                .build();
+
+        LogEntry entry2 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(101)  // Different line number
+                .message("POST /app/submit 500")
+                .build();
+
+        String key1 = (String) generateUniqueKeyMethod.invoke(searchService, entry1);
+        String key2 = (String) generateUniqueKeyMethod.invoke(searchService, entry2);
+
+        assertNotEquals(key1, key2, "Entries with different line numbers should have different keys");
+    }
+
+    /**
+     * Test that entries with different messages generate different keys
+     */
+    @Test
+    void testGenerateUniqueKey_DifferentMessages_DifferentKeys() throws Exception {
+        LogSearchService searchService = createSearchService();
+        Method generateUniqueKeyMethod = LogSearchService.class.getDeclaredMethod("generateUniqueKey", LogEntry.class);
+        generateUniqueKeyMethod.setAccessible(true);
+
+        ZonedDateTime timestamp = ZonedDateTime.now();
+
+        LogEntry entry1 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message("POST /app/submit 500")
+                .build();
+
+        LogEntry entry2 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message("GET /app/home 200")  // Different message
+                .build();
+
+        String key1 = (String) generateUniqueKeyMethod.invoke(searchService, entry1);
+        String key2 = (String) generateUniqueKeyMethod.invoke(searchService, entry2);
+
+        assertNotEquals(key1, key2, "Entries with different messages should have different keys");
+    }
+
+    /**
+     * Test that the unique key handles null values gracefully
+     */
+    @Test
+    void testGenerateUniqueKey_NullValues_HandlesGracefully() throws Exception {
+        LogSearchService searchService = createSearchService();
+        Method generateUniqueKeyMethod = LogSearchService.class.getDeclaredMethod("generateUniqueKey", LogEntry.class);
+        generateUniqueKeyMethod.setAccessible(true);
+
+        LogEntry entry = LogEntry.builder()
+                .timestamp(null)
+                .sourceFile(null)
+                .lineNumber(0)
+                .message(null)
+                .build();
+
+        // Should not throw exception
+        String key = (String) generateUniqueKeyMethod.invoke(searchService, entry);
+        assertNotNull(key, "Should generate a key even with null values");
+    }
+
+    /**
+     * Test that long messages are handled efficiently (using hash)
+     */
+    @Test
+    void testGenerateUniqueKey_VeryLongMessage_UsesPrefix() throws Exception {
+        LogSearchService searchService = createSearchService();
+        Method generateUniqueKeyMethod = LogSearchService.class.getDeclaredMethod("generateUniqueKey", LogEntry.class);
+        generateUniqueKeyMethod.setAccessible(true);
+
+        ZonedDateTime timestamp = ZonedDateTime.now();
+
+        // Create a very long message (>100 chars)
+        String longMessage = "a".repeat(200);
+
+        LogEntry entry1 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message(longMessage)
+                .build();
+
+        LogEntry entry2 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message(longMessage)
+                .build();
+
+        String key1 = (String) generateUniqueKeyMethod.invoke(searchService, entry1);
+        String key2 = (String) generateUniqueKeyMethod.invoke(searchService, entry2);
+
+        assertEquals(key1, key2, "Long messages should generate consistent keys");
+
+        // Verify the key doesn't contain the full message (efficiency check)
+        assertFalse(key1.contains(longMessage), "Key should use hash/prefix for long messages, not full text");
+    }
+
+    /**
+     * Test that messages differing only after 100 chars generate the same key
+     * This is expected behavior to handle very long messages efficiently
+     */
+    @Test
+    void testGenerateUniqueKey_MessagesWithSamePrefix_SameKey() throws Exception {
+        LogSearchService searchService = createSearchService();
+        Method generateUniqueKeyMethod = LogSearchService.class.getDeclaredMethod("generateUniqueKey", LogEntry.class);
+        generateUniqueKeyMethod.setAccessible(true);
+
+        ZonedDateTime timestamp = ZonedDateTime.now();
+
+        // Two messages with same first 100 chars but different afterwards
+        String prefix = "a".repeat(100);
+        String message1 = prefix + "different1";
+        String message2 = prefix + "different2";
+
+        LogEntry entry1 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message(message1)
+                .build();
+
+        LogEntry entry2 = LogEntry.builder()
+                .timestamp(timestamp)
+                .sourceFile("access.log")
+                .lineNumber(100)
+                .message(message2)
+                .build();
+
+        String key1 = (String) generateUniqueKeyMethod.invoke(searchService, entry1);
+        String key2 = (String) generateUniqueKeyMethod.invoke(searchService, entry2);
+
+        assertEquals(key1, key2, "Messages with same 100-char prefix should generate same key (expected for efficiency)");
+    }
+
+    /**
+     * Helper method to create a LogSearchService instance for testing
+     */
+    private LogSearchService createSearchService() {
+        // Create minimal LogSearchService with mocked dependencies
+        // We only need it to test the generateUniqueKey method
+        LogSearchProperties props = new LogSearchProperties();
+        props.setIndexDir(tempDir.resolve("index").toString());
+
+        // Note: This will use null for metadataIndexService and luceneIndexService
+        // but that's fine for testing generateUniqueKey which doesn't use them
+        return new LogSearchService(props, null, null);
     }
 }

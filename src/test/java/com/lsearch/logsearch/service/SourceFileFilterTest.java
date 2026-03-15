@@ -31,16 +31,23 @@ class SourceFileFilterTest {
         properties = new LogSearchProperties();
         properties.setLogsDir(tempDir.toString());
         properties.setIndexDir(tempDir.resolve("index").toString());
+        properties.setTimezone("Pacific/Auckland");  // Set timezone for test
 
         indexService = new LuceneIndexService(properties);
     }
 
     @Test
     void testSourceFileFilter_FindsMatchingEntries() throws IOException, ParseException, InterruptedException {
-        // Create log entries from different source files
-        LogEntry entry1 = createLogEntry("server-20260312.log", "Error in payment service");
-        LogEntry entry2 = createLogEntry("server-20260313.log", "Warning in order service");
-        LogEntry entry3 = createLogEntry("server-20260312.log", "Info message");
+        // Generate chunkId once to avoid hour rollover race condition
+        ZonedDateTime now = ZonedDateTime.now();
+        String chunkId = "default::" + now.format(
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "::chunk-" +
+            String.format("%02d", now.getHour());
+
+        // Create log entries from different source files with consistent timestamp
+        LogEntry entry1 = createLogEntryWithChunkId("server-20260312.log", "Error in payment service", now, chunkId);
+        LogEntry entry2 = createLogEntryWithChunkId("server-20260313.log", "Warning in order service", now, chunkId);
+        LogEntry entry3 = createLogEntryWithChunkId("server-20260312.log", "Info message", now, chunkId);
 
         // Index the entries
         indexService.indexLogEntry(entry1);
@@ -57,10 +64,6 @@ class SourceFileFilterTest {
         Thread.sleep(100);
 
         // Search for entries from specific source file
-        String chunkId = "default::" + ZonedDateTime.now().format(
-            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "::chunk-" +
-            String.format("%02d", ZonedDateTime.now().getHour());
-
         List<LogEntry> results = indexService.searchChunk(chunkId, "sourceFile:server-20260312.log", 100);
 
         // Should find 2 entries from server-20260312.log
@@ -75,8 +78,14 @@ class SourceFileFilterTest {
 
     @Test
     void testSourceFileFilter_NoMatchReturnsEmpty() throws IOException, ParseException, InterruptedException {
-        // Create log entry
-        LogEntry entry = createLogEntry("server-20260312.log", "Test message");
+        // Generate chunkId once to avoid hour rollover race condition
+        ZonedDateTime now = ZonedDateTime.now();
+        String chunkId = "default::" + now.format(
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "::chunk-" +
+            String.format("%02d", now.getHour());
+
+        // Create log entry with consistent timestamp
+        LogEntry entry = createLogEntryWithChunkId("server-20260312.log", "Test message", now, chunkId);
 
         // Index the entry
         indexService.indexLogEntry(entry);
@@ -85,10 +94,6 @@ class SourceFileFilterTest {
         Thread.sleep(100);
 
         // Search for non-existent source file
-        String chunkId = "default::" + ZonedDateTime.now().format(
-            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "::chunk-" +
-            String.format("%02d", ZonedDateTime.now().getHour());
-
         List<LogEntry> results = indexService.searchChunk(chunkId, "sourceFile:nonexistent.log", 100);
 
         // Should return empty results
@@ -97,10 +102,16 @@ class SourceFileFilterTest {
 
     @Test
     void testSourceFileFilter_WithOtherFilters() throws IOException, ParseException, InterruptedException {
-        // Create log entries with different levels
-        LogEntry entry1 = createLogEntry("server-20260312.log", "ERROR", "Payment failed");
-        LogEntry entry2 = createLogEntry("server-20260312.log", "INFO", "Payment succeeded");
-        LogEntry entry3 = createLogEntry("server-20260313.log", "ERROR", "Order failed");
+        // Generate chunkId once to avoid hour rollover race condition
+        ZonedDateTime now = ZonedDateTime.now();
+        String chunkId = "default::" + now.format(
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "::chunk-" +
+            String.format("%02d", now.getHour());
+
+        // Create log entries with different levels and consistent timestamp
+        LogEntry entry1 = createLogEntryWithChunkId("server-20260312.log", "ERROR", "Payment failed", now, chunkId);
+        LogEntry entry2 = createLogEntryWithChunkId("server-20260312.log", "INFO", "Payment succeeded", now, chunkId);
+        LogEntry entry3 = createLogEntryWithChunkId("server-20260313.log", "ERROR", "Order failed", now, chunkId);
 
         // Index entries
         indexService.indexLogEntry(entry1);
@@ -111,10 +122,6 @@ class SourceFileFilterTest {
         Thread.sleep(100);
 
         // Search with combined sourceFile and level filter
-        String chunkId = "default::" + ZonedDateTime.now().format(
-            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "::chunk-" +
-            String.format("%02d", ZonedDateTime.now().getHour());
-
         List<LogEntry> results = indexService.searchChunk(chunkId,
             "sourceFile:server-20260312.log AND level:ERROR", 100);
 
@@ -146,6 +153,25 @@ class SourceFileFilterTest {
         String chunkId = "default::" + now.format(
             java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) +
             "::chunk-" + String.format("%02d", now.getHour());
+        entry.setChunkId(chunkId);
+
+        return entry;
+    }
+
+    private LogEntry createLogEntryWithChunkId(String sourceFile, String message, ZonedDateTime timestamp, String chunkId) {
+        return createLogEntryWithChunkId(sourceFile, "INFO", message, timestamp, chunkId);
+    }
+
+    private LogEntry createLogEntryWithChunkId(String sourceFile, String level, String message, ZonedDateTime timestamp, String chunkId) {
+        LogEntry entry = new LogEntry();
+        entry.setTimestamp(timestamp);
+        entry.setLevel(level);
+        entry.setMessage(message);
+        entry.setThread("main");
+        entry.setLogger("com.test.Logger");
+        entry.setUser("testuser");
+        entry.setSourceFile(sourceFile);
+        entry.setLineNumber(1);
         entry.setChunkId(chunkId);
 
         return entry;

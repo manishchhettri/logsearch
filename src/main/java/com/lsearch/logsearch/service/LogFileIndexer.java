@@ -19,7 +19,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -41,8 +43,11 @@ public class LogFileIndexer {
     private final ChunkMetadataExtractor chunkMetadataExtractor;
     private final MetadataIndexService metadataIndexService;
 
-    // Thread-safe set for parallel indexing
+    // Thread-safe set for parallel indexing (tracks absolute paths)
     private final Set<String> indexedFiles = ConcurrentHashMap.newKeySet();
+
+    // Content-based deduplication (tracks filename + size to detect duplicates in different directories)
+    private final Set<String> indexedFileSignatures = ConcurrentHashMap.newKeySet();
 
     public LogFileIndexer(LogSearchProperties properties, LogParser logParser,
                           LuceneIndexService indexService, IndexConfigService indexConfigService,
@@ -110,18 +115,62 @@ public class LogFileIndexer {
 
         Pattern filePattern = Pattern.compile(indexConfig.getFilePattern());
         AtomicInteger processedFiles = new AtomicInteger(0);
+        AtomicInteger skippedFiles = new AtomicInteger(0);
 
-        // Parallel indexing - process multiple files concurrently
-        // Uses Files.walk() for recursive subdirectory scanning
+        // Step 1: Collect all matching files
+        List<Path> allFiles;
         try (Stream<Path> paths = Files.walk(logsDir)) {
-            paths.filter(Files::isRegularFile)
+            allFiles = paths.filter(Files::isRegularFile)
                     .filter(path -> filePattern.matcher(path.getFileName().toString()).matches())
-                    .parallel()  // Enable parallel processing
-                    .forEach(path -> {
-                        indexLogFile(path, indexConfig);
-                        processedFiles.incrementAndGet();
-                    });
+                    .collect(java.util.stream.Collectors.toList());
         }
+
+        log.info("Found {} files matching pattern for index: {}", allFiles.size(), indexConfig.getName());
+
+        // Step 2: Deduplicate by file signature (filename + size) BEFORE parallel processing
+        // Keep only the first occurrence of each unique file signature
+        Map<String, Path> uniqueFiles = new LinkedHashMap<>();
+        int alreadyIndexedCount = 0;
+
+        for (Path path : allFiles) {
+            String absolutePath = path.toAbsolutePath().normalize().toString();
+
+            // Skip if already indexed (by absolute path)
+            if (indexedFiles.contains(absolutePath)) {
+                alreadyIndexedCount++;
+                log.debug("Skipping already-indexed file: {} at {}", path.getFileName(), absolutePath);
+                continue;
+            }
+
+            String fileSignature = getFileSignature(path);
+
+            // Keep first occurrence, skip duplicates
+            if (!uniqueFiles.containsKey(fileSignature)) {
+                uniqueFiles.put(fileSignature, path);
+            } else {
+                log.info("Skipping duplicate file (same name and size): {} at {}",
+                        path.getFileName().toString(), absolutePath);
+                skippedFiles.incrementAndGet();
+            }
+        }
+
+        log.info("After deduplication: {} unique files to index, {} duplicates skipped, {} already indexed",
+                uniqueFiles.size(), skippedFiles.get(), alreadyIndexedCount);
+
+        // Step 3: Process only the deduplicated files in parallel
+        uniqueFiles.values().parallelStream()
+                .forEach(path -> {
+                    String absolutePath = path.toAbsolutePath().normalize().toString();
+                    String fileSignature = getFileSignature(path);
+
+                    // Mark as indexed (thread-safe) - use normalized paths
+                    indexedFiles.add(absolutePath);
+                    indexedFileSignatures.add(fileSignature);
+
+                    // Index the file
+                    indexLogFile(path, indexConfig);
+                    processedFiles.incrementAndGet();
+                });
 
         log.info("Indexed {} files for index: {}", processedFiles.get(), indexConfig.getName());
     }
@@ -175,33 +224,47 @@ public class LogFileIndexer {
     }
 
     /**
+     * Generate a unique signature for a file based on filename and size
+     * This helps detect duplicate files in different directories (e.g., logs/ and logs/archive/)
+     */
+    private String getFileSignature(Path logFile) {
+        try {
+            String filename = logFile.getFileName().toString();
+            long size = Files.size(logFile);
+            return filename + ":" + size;
+        } catch (IOException e) {
+            // Fallback to filename only if size cannot be determined
+            return logFile.getFileName().toString();
+        }
+    }
+
+    /**
      * Index a single log file with index context
+     * NOTE: Caller must ensure this file is not a duplicate before calling
      */
     private void indexLogFile(Path logFile, IndexConfig indexConfig) {
         String filename = logFile.getFileName().toString();
-        String absolutePath = logFile.toAbsolutePath().toString();
-
-        if (indexedFiles.contains(absolutePath)) {
-            log.debug("File already indexed: {}", filename);
-            return;
-        }
+        // Normalize path to remove ./ and ../ components for clean absolute paths
+        String absolutePath = logFile.toAbsolutePath().normalize().toString();
+        String fileSignature = getFileSignature(logFile);
 
         log.info("Indexing log file: {} (index: {}, environment: {})",
                 filename, indexConfig.getName(), indexConfig.getEnvironment());
 
         boolean chunkingEnabled = properties.getChunking() != null && properties.getChunking().isEnabled();
 
+        // Use absolute path as sourceFile to avoid confusion when same file is in multiple locations
         if (chunkingEnabled) {
-            indexLogFileWithChunking(logFile, indexConfig, filename, absolutePath);
+            indexLogFileWithChunking(logFile, indexConfig, absolutePath, absolutePath, fileSignature);
         } else {
-            indexLogFileStandard(logFile, indexConfig, filename, absolutePath);
+            indexLogFileStandard(logFile, indexConfig, absolutePath, absolutePath, fileSignature);
         }
     }
 
     /**
      * Standard indexing (without chunking) - entry by entry
      */
-    private void indexLogFileStandard(Path logFile, IndexConfig indexConfig, String filename, String absolutePath) {
+    private void indexLogFileStandard(Path logFile, IndexConfig indexConfig, String filename, String absolutePath, String fileSignature) {
         AtomicLong lineNumber = new AtomicLong(0);
         AtomicLong indexedLines = new AtomicLong(0);
         AtomicLong skippedLines = new AtomicLong(0);
@@ -280,7 +343,6 @@ public class LogFileIndexer {
             }
 
             indexService.commit();
-            indexedFiles.add(absolutePath);
 
             log.info("Completed indexing {}: {} total lines, {} indexed entries, {} skipped lines",
                     filename, lineNumber.get(), indexedLines.get(), skippedLines.get());
@@ -293,7 +355,7 @@ public class LogFileIndexer {
     /**
      * Chunking-aware indexing - groups entries into chunks with metadata
      */
-    private void indexLogFileWithChunking(Path logFile, IndexConfig indexConfig, String filename, String absolutePath) {
+    private void indexLogFileWithChunking(Path logFile, IndexConfig indexConfig, String filename, String absolutePath, String fileSignature) {
         AtomicLong lineNumber = new AtomicLong(0);
         AtomicLong skippedLines = new AtomicLong(0);
 
@@ -417,7 +479,6 @@ public class LogFileIndexer {
             }
 
             indexService.commit();
-            indexedFiles.add(absolutePath);
 
             log.info("Completed chunked indexing {}: {} total lines, {} entries, {} chunks",
                     filename, lineNumber.get(), allEntries.size(), chunks.size());
@@ -451,8 +512,9 @@ public class LogFileIndexer {
     public void fullReindex() throws IOException {
         log.info("Starting FULL re-index (deleting existing indexes)...");
 
-        // Clear tracked files so everything gets re-indexed
+        // Clear tracked files and signatures so everything gets re-indexed
         indexedFiles.clear();
+        indexedFileSignatures.clear();
 
         // Delete all existing indexes
         indexService.deleteAllIndexes();

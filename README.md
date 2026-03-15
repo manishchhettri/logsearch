@@ -75,8 +75,11 @@ Instead of searching raw files, developers query a **high-performance index**.
 - Exception type facets (SQLException, NullPointerException, OutOfMemoryError)
 - Component/package facets for code-aware filtering
 - Syntax-highlighted search results
+- **Full file paths** with smart formatting (path dimmed, filename prominent)
+- **Deduplication indicator** (unique hits count)
+- **View Flow button** (appears when user filter is active)
 - Export options (CSV, JSON, Add to Dashboard)
-- Performance metrics (e.g., "took 167ms")
+- Performance metrics (e.g., "took 167ms, 245 unique hits")
 
 ### Context View with Stack Traces
 
@@ -84,10 +87,13 @@ Instead of searching raw files, developers query a **high-performance index**.
 
 **Key Features Shown:**
 - Full context view showing log lines before and after selected event
+- **Complete file path** in modal title with tooltip
+- **Normalized path handling** (automatically resolves `./` and `../`)
 - Multi-line stack trace handling
 - Syntax highlighting for exceptions, error keywords, file paths
 - Line-by-line navigation
 - Color-coded log levels (ERROR, WARN, INFO)
+- Target line highlighted for easy identification
 
 ### Dashboards with Analytics Widgets
 
@@ -124,6 +130,10 @@ Runs as a **single Java application** with no external services required.
 ### Lightweight Alternative
 
 Keeps Splunk for operational monitoring while enabling low-cost historical search.
+
+### Intelligent & Accurate
+
+**Automatic deduplication** eliminates duplicate results when log files are archived or copied to multiple locations. See each unique log event only once, with full path transparency showing the exact file source.
 
 ---
 
@@ -233,17 +243,24 @@ java.lang.NullPointerException
 
 ## Context View
 
-See log lines before and after the event.
+See log lines before and after the event with **full file path tracking**.
 
 Example:
 
 ```
 Previous logs
-Target log event
+Target log event  ← Click to view
 Following logs
 ```
 
-This makes debugging faster by showing surrounding activity.
+**Features:**
+- Click any log entry to view ±10 lines of context
+- Full file path shown in modal title with tooltip
+- Works with both relative and absolute paths
+- Automatically normalizes paths (handles `./` and `../` correctly)
+- Target line highlighted in context view
+
+This makes debugging faster by showing surrounding activity and understanding the execution flow.
 
 ---
 
@@ -389,9 +406,98 @@ database timeouts
 
 ---
 
+## User Flow Timeline
+
+Visual timeline of log activity for a specific user across services and components, displayed as a **lightweight color-coded vertical timeline** with intelligent exception parsing.
+
+**How to use:**
+1. Search with user filter: `user:john.doe` or `user:admin`
+2. Click **"📊 View Flow"** button (appears automatically when user filter is active)
+3. View chronological timeline in slide-in panel showing:
+   - Service/component transitions with arrows (Client → Payment → Database)
+   - Request flow across system boundaries
+   - Color-coded boxes by log level (blue/orange/red gradients)
+   - ERROR/WARN events highlighted with smart exception summaries
+   - Timing between events
+   - Interactive boxes (click to highlight in main results)
+
+**Smart Exception Display:**
+Instead of showing full 50-line stack traces, displays only top-level information:
+```
+❌ ERROR - NullPointerException
+at PaymentService.processPayment:145
+[Click to see full log ›]
+```
+
+**Benefits:**
+- Trace user journey through distributed systems
+- Identify where user requests fail in multi-service architectures
+- Debug authentication, authorization, and session issues
+- Visualize user activity patterns with clean, readable formatting
+- Export timeline as PNG for incident reports
+
+**Features:**
+- Level toggles (show/hide INFO, WARN, ERROR)
+- Correlation ID selector (switch between sessions)
+- Interactive highlighting (click box → highlight log)
+- Fast rendering (~100ms for 100 logs)
+- Export to PNG for documentation
+
+Example use case:
+```
+Query: user:customer123 AND payment
+View Flow → See entire payment flow from authentication to completion
+```
+
+For detailed technical specification, see FEATURES.md section 17.
+
+---
+
 ## Bulk Log Download
 
 Search results can be downloaded for offline analysis or sharing with team members.
+
+---
+
+## Intelligent Deduplication
+
+**Automatically prevents duplicate search results** when the same log file exists in multiple locations.
+
+### The Problem
+Log files are often archived or copied to different directories:
+```
+logs/access.log              ← Active log
+logs/archive/access.log      ← Archived copy
+logs/backup/access.log       ← Backup copy
+```
+
+Without deduplication, searching for "error" would return **the same log entry 3 times** — once from each file location.
+
+### The Solution
+LogSearch uses intelligent deduplication based on:
+- **Timestamp** (exact millisecond match)
+- **Line number** (position in original file)
+- **Message content** (first 100 characters for efficiency)
+
+**Result:** Each unique log entry appears only once, regardless of how many copies of the file exist.
+
+### Benefits
+- **Cleaner results** — No confusion from duplicate entries
+- **Accurate counts** — `totalHits` reflects unique log events, not file copies
+- **Better analytics** — Aggregations and charts show true event frequency
+
+### Full File Path Display
+To clarify which file copy was used (after deduplication), LogSearch displays:
+- **Full absolute path** with hover tooltip for complete path
+- **Smart formatting**: `/path/to/logs/`**`access.log:100`** (path dimmed, filename prominent)
+- **Location transparency** in both search results and context viewer
+
+Example display:
+```
+File: /Users/logs/archive/access.log:234
+      ^^^^^^^^^^^^^^^^^^^^^^^^^ (gray, 90% opacity)
+                               ^^^^^^^^^^^^ (normal weight, prominent)
+```
 
 ---
 
@@ -809,13 +915,41 @@ Instead, it complements them by providing **low-cost historical search**.
 
 # Future Enhancements
 
-Planned improvements include:
+## Planned Enterprise Features
 
-• distributed indexing
-• cloud storage integration
-• faster indexing pipelines
-• structured log parsing
-• alert pattern detection
+### User Authentication and Personalized Dashboards
+- JWT-based authentication with secure password storage
+- Per-user dashboard persistence
+- Access from any browser/device
+- No external database required (JSON file storage)
+- **Implementation Effort**: 3-4 weeks
+- **When to implement**: Deploying as shared service for multiple developers
+
+### Advanced User Flow Visualization
+- Visual timeline of user log flows using lightweight HTML/CSS
+- Color-coded gradient boxes by log level (blue/orange/red)
+- Interactive boxes (click to highlight corresponding logs)
+- Smart exception parsing (top-level class/method/line only)
+- **Implementation Effort**: 10-11 hours
+- **When to implement**: Debugging user-specific issues across distributed systems
+
+### Additional Enhancements
+- Distributed indexing across multiple nodes
+- Cloud storage integration (S3, Azure Blob)
+- Faster indexing pipelines
+- Structured log parsing (JSON, XML)
+- Alert pattern detection and notifications
+- Real-time log streaming (WebSocket-based)
+- Query result caching
+- Advanced export formats (CSV, JSON, Excel)
+
+## Design Principles for Future Work
+
+All enhancements follow LogSearch's core principles:
+- **Zero External Dependencies** - No database servers, no external services
+- **Lucene-Native Architecture** - Consistent technology stack
+- **Backward Compatibility** - Migration paths for existing deployments
+- **Simple Operations** - Configuration via YAML, minimal learning curve
 
 ---
 

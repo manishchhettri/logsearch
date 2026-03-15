@@ -281,6 +281,19 @@
             background: #545b62;
         }
 
+        .btn-flow {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+            font-weight: 500;
+        }
+
+        .btn-flow:hover {
+            background: linear-gradient(135deg, #5568d3 0%, #65408b 100%);
+            box-shadow: 0 3px 6px rgba(102, 126, 234, 0.4);
+            transform: translateY(-1px);
+        }
+
         .status {
             padding: 12px;
             margin-bottom: 20px;
@@ -320,6 +333,13 @@
             background: white;
             overflow: hidden;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+        }
+
+        .log-entry.highlighted {
+            border: 2px solid #667eea;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
+            background: #f8f9ff;
         }
 
         .log-entry-header {
@@ -1092,6 +1112,154 @@
             transform: rotate(-90deg);
         }
 
+        /* Flow Diagram Panel Styles */
+        .flow-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 500px;
+            height: 100vh;
+            background: white;
+            box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
+            transform: translateX(100%);
+            transition: transform 0.3s ease-in-out;
+            z-index: 1001;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .flow-panel.active {
+            transform: translateX(0);
+        }
+
+        .flow-panel-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        .flow-panel-header {
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .flow-panel-header h2 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .flow-close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .flow-close-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .flow-panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .flow-timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .flow-box {
+            padding: 14px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+            border-left: 4px solid;
+        }
+
+        .flow-box:hover {
+            transform: translateX(-4px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+        }
+
+        .flow-box.highlighted {
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.4);
+        }
+
+        .flow-box.level-info {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-left-color: #2196f3;
+        }
+
+        .flow-box.level-warn {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            border-left-color: #ff9800;
+        }
+
+        .flow-box.level-error {
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border-left-color: #f44336;
+        }
+
+        .flow-box-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .flow-service-name {
+            color: #333;
+        }
+
+        .flow-timestamp {
+            color: #666;
+            font-size: 11px;
+            font-weight: normal;
+        }
+
+        .flow-message {
+            font-size: 13px;
+            color: #495057;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        .flow-exception {
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: #d32f2f;
+        }
+
         @media (max-width: 1024px) {
             .main-container {
                 grid-template-columns: 1fr;
@@ -1099,6 +1267,10 @@
 
             .sidebar {
                 max-height: 400px;
+            }
+
+            .flow-panel {
+                width: 100%;
             }
         }
     </style>
@@ -1166,6 +1338,7 @@
                     <div class="button-group">
                         <button class="btn-primary" onclick="search()">Search</button>
                         <button class="btn-primary btn-save-search" onclick="saveCurrentSearch()">Save Search</button>
+                        <button id="viewFlowBtn" class="btn-flow hidden" onclick="openFlowDiagram()">📊 View Flow</button>
                     </div>
                 </div>
             </div>
@@ -1373,6 +1546,18 @@
         </main>
     </div>
 
+    <!-- Flow Diagram Slide-in Panel -->
+    <div id="flowDiagramPanel" class="flow-panel hidden">
+        <div class="flow-panel-header">
+            <h2>User Flow Timeline</h2>
+            <button class="flow-close-btn" onclick="closeFlowDiagram()">✕</button>
+        </div>
+        <div class="flow-panel-content">
+            <div id="flowTimeline" class="flow-timeline"></div>
+        </div>
+    </div>
+    <div id="flowPanelOverlay" class="flow-panel-overlay hidden" onclick="closeFlowDiagram()"></div>
+
     <script>
         let currentPage = 0;
         const pageSize = 50;
@@ -1381,6 +1566,19 @@
         let currentAggregations = null;
         let currentResults = null; // Store current search results for export
         let currentRelativeTime = null; // Track if using relative time (1, 6, 24, 48, 168 hours)
+
+        // Check if user filter is active and update View Flow button visibility
+        function updateViewFlowButtonVisibility() {
+            const query = document.getElementById('query').value.toLowerCase();
+            const viewFlowBtn = document.getElementById('viewFlowBtn');
+
+            // Show button only if query contains user: filter
+            if (query.includes('user:')) {
+                viewFlowBtn.classList.remove('hidden');
+            } else {
+                viewFlowBtn.classList.add('hidden');
+            }
+        }
 
         function setLast24Hours() {
             const now = new Date();
@@ -1881,6 +2079,9 @@
             // Store results for export
             currentResults = result;
 
+            // Update View Flow button visibility based on query
+            updateViewFlowButtonVisibility();
+
             document.getElementById('results').classList.remove('hidden');
 
             const info = `Found ${result.totalHits} results (showing page ${result.page + 1}, took ${result.searchTimeMs}ms)`;
@@ -1889,9 +2090,10 @@
             const container = document.getElementById('resultsContainer');
             container.innerHTML = '';
 
-            result.entries.forEach(entry => {
+            result.entries.forEach((entry, index) => {
                 const entryDiv = document.createElement('div');
                 entryDiv.className = 'log-entry';
+                entryDiv.setAttribute('data-entry-index', index);
 
                 const timestamp = new Date(entry.timestamp).toLocaleString();
 
@@ -1911,19 +2113,29 @@
                     ? `<span><strong>User:</strong> ${escapeHtml(entry.user)}</span>`
                     : '';
 
+                // Extract filename from path for better display
+                const fileName = entry.sourceFile.split('/').pop().split('\\').pop();
+                const isFullPath = entry.sourceFile.includes('/') || entry.sourceFile.includes('\\');
+                const fileDisplay = isFullPath
+                    ? `<span title="${escapeHtml(entry.sourceFile)}"><strong>File:</strong> <span style="color: #666; font-size: 0.9em;">${escapeHtml(entry.sourceFile.substring(0, entry.sourceFile.lastIndexOf('/') + 1))}</span>${escapeHtml(fileName)}:${entry.lineNumber}</span>`
+                    : `<span><strong>File:</strong> ${escapeHtml(entry.sourceFile)}:${entry.lineNumber}</span>`;
+
                 entryDiv.innerHTML = `
                     <div class="log-entry-header">
                         <span><strong>Time:</strong> ${timestamp}</span>
                         ${levelBadge}
                         ${userInfo}
                         ${loggerInfo}
-                        <span><strong>File:</strong> ${entry.sourceFile}:${entry.lineNumber}</span>
+                        ${fileDisplay}
                     </div>
                     <div class="log-entry-message">${highlightLogMessage(entry.message)}</div>
                 `;
 
-                // Add click handler to show context
-                entryDiv.onclick = () => showContext(entry.sourceFile, entry.lineNumber);
+                // Add click handler to show context and highlight flow box if panel is open
+                entryDiv.onclick = () => {
+                    showContext(entry.sourceFile, entry.lineNumber);
+                    highlightFlowBox(index);
+                };
 
                 container.appendChild(entryDiv);
             });
@@ -2506,8 +2718,9 @@
             const title = document.getElementById('contextTitle');
             const body = document.getElementById('contextBody');
 
-            // Show modal with loading state
+            // Show modal with loading state - display full path for clarity
             title.textContent = `Context for ${sourceFile}:${lineNumber}`;
+            title.title = sourceFile; // Show full path on hover
             body.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">Loading context...</div>';
             modal.classList.add('show');
 
@@ -3328,6 +3541,211 @@
                 renderDashboardWidgets(dashboard);
             }
         }
+
+        // Flow Diagram functionality
+        function openFlowDiagram() {
+            if (!currentResults || !currentResults.entries || currentResults.entries.length === 0) {
+                showStatus('Please run a search first to view flow diagram', 'error');
+                return;
+            }
+
+            // Render the timeline
+            renderFlowTimeline(currentResults.entries);
+
+            // Show the panel and overlay
+            document.getElementById('flowDiagramPanel').classList.remove('hidden');
+            document.getElementById('flowPanelOverlay').classList.remove('hidden');
+
+            // Trigger animation
+            setTimeout(() => {
+                document.getElementById('flowDiagramPanel').classList.add('active');
+            }, 10);
+        }
+
+        function closeFlowDiagram() {
+            document.getElementById('flowDiagramPanel').classList.remove('active');
+            setTimeout(() => {
+                document.getElementById('flowDiagramPanel').classList.add('hidden');
+                document.getElementById('flowPanelOverlay').classList.add('hidden');
+            }, 300);
+        }
+
+        function renderFlowTimeline(logs) {
+            const timeline = document.getElementById('flowTimeline');
+            timeline.innerHTML = '';
+
+            logs.forEach((log, index) => {
+                const box = createFlowBox(log, index);
+                timeline.appendChild(box);
+            });
+        }
+
+        function createFlowBox(log, index) {
+            const box = document.createElement('div');
+            const levelClass = log.level ? `level-${log.level.toLowerCase()}` : 'level-info';
+            box.className = `flow-box ${levelClass}`;
+            box.setAttribute('data-log-index', index);
+
+            // Extract service name from logger or use a default
+            const serviceName = extractServiceName(log);
+
+            // Format timestamp
+            const timestamp = new Date(log.timestamp).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                fractionalSecondDigits: 3
+            });
+
+            // Build the box content
+            let content = `
+                <div class="flow-box-header">
+                    <span class="flow-service-name">${escapeHtml(serviceName)} - ${escapeHtml(log.level || 'INFO')}</span>
+                    <span class="flow-timestamp">${timestamp}</span>
+                </div>
+                <div class="flow-message">${escapeHtml(truncateMessage(log.message, 150))}</div>
+            `;
+
+            // Add exception details if present
+            if (log.level === 'ERROR' && log.message.includes('Exception')) {
+                const exceptionInfo = extractExceptionInfo(log.message);
+                if (exceptionInfo) {
+                    content += `<div class="flow-exception">${escapeHtml(exceptionInfo)}</div>`;
+                }
+            }
+
+            box.innerHTML = content;
+
+            // Add click handler to highlight corresponding log entry
+            box.addEventListener('click', () => {
+                highlightLogEntry(index);
+            });
+
+            return box;
+        }
+
+        function extractServiceName(log) {
+            // Try to extract from logger field (e.g., "com.payment.PaymentService" -> "PaymentService")
+            if (log.logger) {
+                const parts = log.logger.split('.');
+                return parts[parts.length - 1];
+            }
+
+            // Try to extract from message (look for common patterns)
+            if (log.message) {
+                // Look for patterns like "PaymentService:" or "[PaymentService]"
+                const match = log.message.match(/\[?([A-Z][a-zA-Z]+(?:Service|Controller|Handler))\]?:/);
+                if (match) {
+                    return match[1];
+                }
+            }
+
+            return 'Service';
+        }
+
+        function extractExceptionInfo(message) {
+            // Extract exception type and location
+            const lines = message.split('\n');
+
+            // Find exception type (usually first line)
+            const exceptionLine = lines.find(line => line.includes('Exception'));
+            if (!exceptionLine) return null;
+
+            // Find stack trace line (starts with "at")
+            const stackLine = lines.find(line => line.trim().startsWith('at '));
+            if (!stackLine) return exceptionLine;
+
+            // Parse stack trace: "at com.example.PaymentService.processPayment(PaymentService.java:145)"
+            const match = stackLine.match(/at\s+([a-zA-Z0-9_.]+)\.([a-zA-Z0-9_]+)\(.*?:(\d+)\)/);
+            if (match) {
+                const className = match[1].split('.').pop();
+                const methodName = match[2];
+                const lineNumber = match[3];
+                return `${exceptionLine.trim()}\nat ${className}.${methodName}:${lineNumber}`;
+            }
+
+            return exceptionLine.trim();
+        }
+
+        function truncateMessage(message, maxLength) {
+            if (message.length <= maxLength) return message;
+
+            // Try to truncate at word boundary
+            const truncated = message.substring(0, maxLength);
+            const lastSpace = truncated.lastIndexOf(' ');
+            if (lastSpace > maxLength * 0.8) {
+                return truncated.substring(0, lastSpace) + '...';
+            }
+            return truncated + '...';
+        }
+
+        function highlightLogEntry(index) {
+            // Remove previous highlights from flow boxes
+            document.querySelectorAll('.flow-box.highlighted').forEach(box => {
+                box.classList.remove('highlighted');
+            });
+
+            // Remove previous highlights from log entries
+            document.querySelectorAll('.log-entry.highlighted').forEach(entry => {
+                entry.classList.remove('highlighted');
+            });
+
+            // Highlight the clicked flow box
+            const box = document.querySelector(`.flow-box[data-log-index="${index}"]`);
+            if (box) {
+                box.classList.add('highlighted');
+            }
+
+            // Find and highlight the corresponding log entry
+            const logEntry = document.querySelector(`.log-entry[data-entry-index="${index}"]`);
+            if (logEntry) {
+                logEntry.classList.add('highlighted');
+
+                // Scroll the log entry into view smoothly
+                logEntry.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+            }
+        }
+
+        function highlightFlowBox(index) {
+            // Only highlight if flow panel is open
+            const flowPanel = document.getElementById('flowDiagramPanel');
+            if (!flowPanel || flowPanel.classList.contains('hidden')) {
+                return;
+            }
+
+            // Remove previous highlights from flow boxes
+            document.querySelectorAll('.flow-box.highlighted').forEach(box => {
+                box.classList.remove('highlighted');
+            });
+
+            // Highlight the corresponding flow box
+            const box = document.querySelector(`.flow-box[data-log-index="${index}"]`);
+            if (box) {
+                box.classList.add('highlighted');
+
+                // Scroll the flow box into view smoothly
+                box.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+            }
+        }
+
+        // Initialize event listeners on page load
+        (function initializeApp() {
+            // Add event listener to query input to update View Flow button visibility
+            const queryInput = document.getElementById('query');
+            if (queryInput) {
+                queryInput.addEventListener('input', updateViewFlowButtonVisibility);
+                queryInput.addEventListener('change', updateViewFlowButtonVisibility);
+            }
+
+            // Set initial button visibility
+            updateViewFlowButtonVisibility();
+        })();
     </script>
 </body>
 </html>

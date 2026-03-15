@@ -73,7 +73,7 @@ log-search:
   retention-days: 30
 
   # Auto-watch for new log files
-  auto-watch: true
+  auto-watch: false
 
   # Watch interval in seconds (how often to check for new files)
   watch-interval: 60

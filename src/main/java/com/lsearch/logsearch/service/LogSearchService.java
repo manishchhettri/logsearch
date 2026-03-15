@@ -132,15 +132,18 @@ public class LogSearchService {
             futures.add(searchExecutor.submit(() -> searchDayIndex(date, queryText, startTime, endTime, indexes, environments)));
         }
 
-        // Collect results from all futures
-        List<LogEntry> allResults = new ArrayList<>();
-        long totalHits = 0;
+        // Collect results from all futures with deduplication
+        // Use LinkedHashMap to preserve insertion order while deduplicating
+        Map<String, LogEntry> uniqueResults = new LinkedHashMap<>();
 
         for (Future<DaySearchResult> future : futures) {
             try {
                 DaySearchResult result = future.get(30, TimeUnit.SECONDS);
-                allResults.addAll(result.entries);
-                totalHits += result.totalHits;
+                // Deduplicate by adding to map with unique key
+                for (LogEntry entry : result.entries) {
+                    String uniqueKey = generateUniqueKey(entry);
+                    uniqueResults.putIfAbsent(uniqueKey, entry);
+                }
             } catch (TimeoutException e) {
                 log.error("Search timed out for a day index", e);
             } catch (ExecutionException e) {
@@ -151,8 +154,12 @@ public class LogSearchService {
             }
         }
 
-        // Sort by timestamp descending (most recent first)
+        // Convert to list and sort by timestamp descending (most recent first)
+        List<LogEntry> allResults = new ArrayList<>(uniqueResults.values());
         allResults.sort((a, b) -> b.getTimestamp().compareTo(a.getTimestamp()));
+
+        // Total hits is now the count of unique results after deduplication
+        long totalHits = allResults.size();
 
         // Apply pagination
         int startIndex = page * pageSize;
@@ -164,7 +171,7 @@ public class LogSearchService {
 
         long searchTimeMs = System.currentTimeMillis() - startMs;
 
-        log.info("Search completed in {}ms, found {} total hits, returning {} results",
+        log.info("Search completed in {}ms, found {} unique hits (deduplicated), returning {} results",
                 searchTimeMs, totalHits, paginatedResults.size());
 
         return SearchResult.builder()
@@ -290,8 +297,7 @@ public class LogSearchService {
         }
 
         // Stage 2: Search only candidate chunks in parallel
-        List<LogEntry> allResults = new ArrayList<>();
-        long totalHits = 0;
+        Map<String, LogEntry> uniqueResults = new LinkedHashMap<>();
         List<Future<List<LogEntry>>> futures = new ArrayList<>();
 
         for (ChunkCandidate candidate : candidates) {
@@ -305,12 +311,15 @@ public class LogSearchService {
             }));
         }
 
-        // Collect results from chunk searches
+        // Collect results from chunk searches with deduplication
         for (Future<List<LogEntry>> future : futures) {
             try {
                 List<LogEntry> chunkResults = future.get(30, TimeUnit.SECONDS);
-                allResults.addAll(chunkResults);
-                totalHits += chunkResults.size();
+                // Deduplicate by adding to map with unique key
+                for (LogEntry entry : chunkResults) {
+                    String uniqueKey = generateUniqueKey(entry);
+                    uniqueResults.putIfAbsent(uniqueKey, entry);
+                }
             } catch (TimeoutException e) {
                 log.error("Chunk search timed out", e);
             } catch (ExecutionException e) {
@@ -321,8 +330,12 @@ public class LogSearchService {
             }
         }
 
-        // Sort by timestamp descending
+        // Convert to list and sort by timestamp descending
+        List<LogEntry> allResults = new ArrayList<>(uniqueResults.values());
         allResults.sort((a, b) -> b.getTimestamp().compareTo(a.getTimestamp()));
+
+        // Total hits is now the count of unique results after deduplication
+        long totalHits = allResults.size();
 
         // Apply pagination
         int startIndex = page * pageSize;
@@ -335,7 +348,7 @@ public class LogSearchService {
         long searchTimeMs = System.currentTimeMillis() - startMs;
 
         log.info("Metadata-first search completed in {}ms (metadata: {}ms, chunks: {}ms), " +
-                 "found {} total hits from {} chunks, returning {} results",
+                 "found {} unique hits (deduplicated) from {} chunks, returning {} results",
                 searchTimeMs, metadataMs, searchTimeMs - metadataMs,
                 totalHits, candidates.size(), paginatedResults.size());
 
@@ -894,6 +907,34 @@ public class LogSearchService {
 
         // Limit patterns to most important ones
         return patterns.stream().limit(5).collect(Collectors.toList());
+    }
+
+    /**
+     * Generate a unique key for a log entry to enable deduplication.
+     * This prevents the same log entry from appearing multiple times when
+     * the same file is indexed from different locations (e.g., active and archived logs).
+     *
+     * Key components:
+     * - timestamp (epoch millis)
+     * - lineNumber (from original file)
+     * - message hash (first 100 chars to handle very long messages efficiently)
+     *
+     * Note: sourceFile is NOT included in the key to ensure that the same log entry
+     * from different file copies (e.g., access.log and archived.log) is deduplicated.
+     */
+    private String generateUniqueKey(LogEntry entry) {
+        long timestamp = entry.getTimestamp() != null
+            ? entry.getTimestamp().toInstant().toEpochMilli()
+            : 0L;
+
+        long lineNumber = entry.getLineNumber();
+
+        // Use first 100 chars of message for efficiency while maintaining uniqueness
+        String messagePrefix = entry.getMessage() != null && entry.getMessage().length() > 100
+            ? entry.getMessage().substring(0, 100)
+            : (entry.getMessage() != null ? entry.getMessage() : "");
+
+        return timestamp + "|" + lineNumber + "|" + messagePrefix.hashCode();
     }
 
     private String extractTopLevelClass(String message) {

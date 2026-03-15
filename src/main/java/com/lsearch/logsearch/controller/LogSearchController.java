@@ -128,7 +128,15 @@ public class LogSearchController {
             @RequestParam(defaultValue = "10") int contextLines) {
 
         try {
-            Path logFilePath = Paths.get(properties.getLogsDir(), sourceFile);
+            // Check if sourceFile is already an absolute path
+            Path logFilePath = Paths.get(sourceFile);
+            if (!logFilePath.isAbsolute()) {
+                // If relative, combine with logs directory
+                logFilePath = Paths.get(properties.getLogsDir(), sourceFile);
+            }
+
+            // Normalize path to resolve any ./ or ../ components
+            logFilePath = logFilePath.normalize();
 
             if (!Files.exists(logFilePath)) {
                 log.warn("Log file not found: {}", logFilePath);
