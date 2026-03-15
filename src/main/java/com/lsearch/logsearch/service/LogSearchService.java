@@ -10,6 +10,10 @@ import com.lsearch.logsearch.model.PatternSummary;
 import com.lsearch.logsearch.model.SearchResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.core.KeywordAnalyzer;
+import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.DirectoryReader;
@@ -189,15 +193,78 @@ public class LogSearchService {
 
         if (queryText != null && !queryText.trim().isEmpty()) {
             // Extract search terms for Bloom filter pruning
-            // Use same tokenization as Bloom filter creation (split on whitespace and common delimiters)
+            // Parse field queries (field:value) and extract only values for Bloom filter matching
             Set<String> terms = new HashSet<>();
-            String[] tokens = queryText.split("[\\s\\.,;:()\\[\\]{}\"'<>=]+");
-            for (String token : tokens) {
-                if (token != null && !token.isEmpty()) {
-                    terms.add(token.toLowerCase());
+
+            // Define valid field names
+            Set<String> validMetadataFields = new HashSet<>(Arrays.asList(
+                "level", "user", "thread", "logger", "sourceFile",
+                "correlationId", "messageId", "flowName", "endpoint"
+            ));
+            Set<String> validContentFields = new HashSet<>(Arrays.asList("message"));
+
+            // Split on AND/OR operators first
+            String[] clauses = queryText.split("\\s+(?:AND|OR)\\s+");
+
+            for (String clause : clauses) {
+                clause = clause.trim();
+
+                // Check if this might be a field query (field:value)
+                boolean isValidFieldQuery = false;
+                String fieldName = null;
+                String fieldValue = null;
+
+                if (clause.contains(":")) {
+                    int colonIndex = clause.indexOf(":");
+                    String potentialFieldName = clause.substring(0, colonIndex).trim();
+                    String potentialFieldValue = clause.substring(colonIndex + 1).trim();
+
+                    // Only treat as field query if field name is valid
+                    if (validMetadataFields.contains(potentialFieldName) ||
+                        validContentFields.contains(potentialFieldName)) {
+                        isValidFieldQuery = true;
+                        fieldName = potentialFieldName;
+                        fieldValue = potentialFieldValue;
+                    }
+                }
+
+                if (isValidFieldQuery && fieldValue != null && !fieldValue.isEmpty()) {
+                    // This is a valid field query
+                    // Remove quotes if present
+                    fieldValue = fieldValue.replaceAll("^\"|\"$", "");
+
+                    // For metadata fields, skip adding to Bloom filter
+                    // This lets all chunks through to Stage 2 for precise metadata filtering
+                    if (validMetadataFields.contains(fieldName)) {
+                        continue;
+                    }
+
+                    // For content fields (message), tokenize the value
+                    if (validContentFields.contains(fieldName)) {
+                        String[] valueTokens = fieldValue.split("[\\s\\.,;:()\\[\\]{}\"'<>=]+");
+                        for (String token : valueTokens) {
+                            if (token != null && !token.isEmpty()) {
+                                terms.add(token.toLowerCase());
+                            }
+                        }
+                    }
+                } else {
+                    // Not a valid field query - treat entire clause as regular text search
+                    // Include colon in delimiters since it's not part of a field query
+                    String[] tokens = clause.split("[\\s\\.,;:()\\[\\]{}\"'<>=]+");
+                    for (String token : tokens) {
+                        if (token != null && !token.isEmpty()) {
+                            terms.add(token.toLowerCase());
+                        }
+                    }
                 }
             }
-            queryBuilder.searchTerms(terms);
+
+            // If no terms were extracted (e.g., pure metadata field query),
+            // don't add any terms - let all chunks through to Stage 2
+            if (!terms.isEmpty()) {
+                queryBuilder.searchTerms(terms);
+            }
         }
 
         // TODO: Add service, logLevel filters based on indexes/environments if needed
@@ -318,7 +385,7 @@ public class LogSearchService {
 
             // Text search query (if provided) - search across all text fields
             if (queryText != null && !queryText.trim().isEmpty()) {
-                String[] fields = {"message", "user", "level", "thread", "logger", "patternText",
+                String[] fields = {"message", "user", "level", "thread", "logger", "sourceFile", "patternText",
                                    "correlationIdText", "messageIdText", "flowNameText", "endpointText"};
                 MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer);
                 Query textQuery = parser.parse(queryText);
@@ -490,7 +557,7 @@ public class LogSearchService {
 
                 // Text search query (if provided)
                 if (queryText != null && !queryText.trim().isEmpty()) {
-                    String[] fields = {"message", "user", "level", "thread", "logger", "patternText",
+                    String[] fields = {"message", "user", "level", "thread", "logger", "sourceFile", "patternText",
                                        "correlationIdText", "messageIdText", "flowNameText", "endpointText"};
                     MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer);
                     Query textQuery = parser.parse(queryText);

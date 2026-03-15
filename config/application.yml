@@ -139,33 +139,113 @@ log-search:
   #     file-pattern: ".*\\.log"
   #     auto-watch: false
 
-  # Integration Platform Log Downloads (Optional)
-  # Configure to automatically download logs from integration platforms
+  # Hierarchical Environment Configuration (Optional)
+  # Organize your log sources by Environment → System (Application) → Servers (Nodes)
+  # This maintains the natural hierarchy of your infrastructure
   #
-  # download-locations:
-  #   - name: "mulesoft-prod"
-  #     display-name: "MuleSoft Production"
-  #     environment: "production"
-  #     platform: "mulesoft"                # mulesoft, boomi, etc.
-  #     base-url: "https://anypoint.mulesoft.com"
-  #     organization-id: "your-org-id"
-  #     environment-id: "your-env-id"
-  #     client-id: "${MULESOFT_CLIENT_ID}"
-  #     client-secret: "${MULESOFT_CLIENT_SECRET}"
-  #     download-dir: "./logs/mulesoft/production"
+  # environments:
+  #   # Production Environment
+  #   production:
+  #     display-name: "Production"
   #     enabled: true
-  #     auto-watch: true
+  #     systems:
+  #       # Payment Service - Multiple Nodes
+  #       - name: "payment-service"
+  #         display-name: "Payment Service"
+  #         enabled: true
+  #         target-path: "./logs/production/payment"
+  #         file-pattern: ".*\\.log"
+  #         retention-days: 90
+  #         auto-watch: true
+  #         requires-auth: true
+  #         default-username: "admin"
+  #         servers:
+  #           - name: "Node 1"
+  #             url: "http://payment-node1.prod:7001/logs/"
+  #             enabled: true
+  #           - name: "Node 2"
+  #             url: "http://payment-node2.prod:7001/logs/"
+  #             enabled: true
+  #           - name: "Node 3"
+  #             url: "http://payment-node3.prod:7001/logs/"
+  #             enabled: true
   #
-  #   - name: "boomi-prod"
-  #     display-name: "Boomi Production"
-  #     environment: "production"
-  #     platform: "boomi"
-  #     account-id: "your-account-id"
-  #     username: "${BOOMI_USERNAME}"
-  #     password: "${BOOMI_PASSWORD}"
-  #     download-dir: "./logs/boomi/production"
+  #       # Order Service - Multiple Nodes
+  #       - name: "order-service"
+  #         display-name: "Order Management"
+  #         enabled: true
+  #         target-path: "./logs/production/orders"
+  #         file-pattern: "server-.*\\.log"
+  #         retention-days: 90
+  #         auto-watch: true
+  #         requires-auth: true
+  #         default-username: "readonly"
+  #         servers:
+  #           - name: "Server A"
+  #             url: "http://order-a.prod:8080/archived-logs/"
+  #           - name: "Server B"
+  #             url: "http://order-b.prod:8080/archived-logs/"
+  #
+  #   # UAT Environment
+  #   uat:
+  #     display-name: "UAT Environment"
   #     enabled: true
-  #     auto-watch: true
+  #     systems:
+  #       # Payment Service UAT - Single Node
+  #       - name: "payment-service"
+  #         display-name: "Payment Service UAT"
+  #         url: "http://payment-uat:7001/logs/"  # Single-server shorthand
+  #         enabled: true
+  #         target-path: "./logs/uat/payment"
+  #         file-pattern: ".*\\.log"
+  #         retention-days: 30
+  #         requires-auth: true
+  #         default-username: "testuser"
+  #
+  #       # Integration Platform - Multiple Nodes
+  #       - name: "integration"
+  #         display-name: "Integration Platform"
+  #         enabled: true
+  #         target-path: "./logs/uat/integration"
+  #         file-pattern: ".*\\.log(\\.gz)?"
+  #         retention-days: 30
+  #         servers:
+  #           - name: "IIB Node 1"
+  #             url: "http://iib-uat-1:4414/logs/"
+  #           - name: "IIB Node 2"
+  #             url: "http://iib-uat-2:4414/logs/"
+  #
+  #   # Development Environment
+  #   dev:
+  #     display-name: "Development"
+  #     enabled: false  # Can disable entire environments
+  #     systems:
+  #       - name: "all-apps"
+  #         display-name: "Dev Server"
+  #         url: "http://dev-server:8080/logs/"
+  #         target-path: "./logs/dev"
+  #         file-pattern: ".*\\.log"
+  #         retention-days: 7
+
+  # ============================================================================
+  # ACTIVE TEST CONFIGURATION (Commented out temporarily)
+  # ============================================================================
+  # Uses the built-in file server at http://localhost:8080/file-server/logs/
+  # This serves files from your ./logs directory for testing downloads
+  #
+  # environments:
+  #   test:
+  #     display-name: "Test Environment"
+  #     enabled: true
+  #     systems:
+  #       - name: "local-logs"
+  #         display-name: "Local Test Logs"
+  #         url: "http://localhost:8080/file-server/logs/"
+  #         target-path: "./logs/downloaded"
+  #         file-pattern: ".*\\.log"
+  #         retention-days: 30
+  #         auto-watch: true
+  #         requires-auth: false
 
 logging:
   level:

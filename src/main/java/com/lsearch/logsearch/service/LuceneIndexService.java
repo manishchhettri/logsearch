@@ -4,6 +4,9 @@ import com.lsearch.logsearch.config.LogSearchProperties;
 import com.lsearch.logsearch.model.LogEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
@@ -27,7 +30,9 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -38,13 +43,32 @@ public class LuceneIndexService {
 
     private final LogSearchProperties properties;
     private final Map<String, IndexWriter> indexWriters = new ConcurrentHashMap<>();
-    private final CodeAnalyzer analyzer = new CodeAnalyzer();
+    private final Analyzer analyzer;
 
     // Locks per date to prevent concurrent IndexWriter creation for the same date
     private final Map<String, Object> dateLocks = new ConcurrentHashMap<>();
 
     public LuceneIndexService(LogSearchProperties properties) {
         this.properties = properties;
+
+        // Configure per-field analyzers:
+        // - KeywordAnalyzer for exact-match fields (sourceFile) - no tokenization
+        // - StandardAnalyzer for simple metadata fields (level, user, thread, logger)
+        // - CodeAnalyzer for message content and code-related text fields
+        Map<String, Analyzer> perFieldAnalyzers = new HashMap<>();
+        perFieldAnalyzers.put("sourceFile", new org.apache.lucene.analysis.core.KeywordAnalyzer());
+        perFieldAnalyzers.put("level", new StandardAnalyzer());
+        perFieldAnalyzers.put("user", new StandardAnalyzer());
+        perFieldAnalyzers.put("thread", new StandardAnalyzer());
+        perFieldAnalyzers.put("logger", new StandardAnalyzer());
+        perFieldAnalyzers.put("correlationIdText", new StandardAnalyzer());
+        perFieldAnalyzers.put("messageIdText", new StandardAnalyzer());
+        perFieldAnalyzers.put("flowNameText", new StandardAnalyzer());
+        perFieldAnalyzers.put("endpointText", new StandardAnalyzer());
+
+        // Default analyzer (CodeAnalyzer) for message and patternText fields
+        this.analyzer = new PerFieldAnalyzerWrapper(new CodeAnalyzer(), perFieldAnalyzers);
+
         initializeIndexDirectory();
     }
 
@@ -187,7 +211,7 @@ public class LuceneIndexService {
 
             // Text search query (if provided)
             if (queryString != null && !queryString.trim().isEmpty()) {
-                String[] fields = {"message", "user", "level", "thread", "logger", "patternText",
+                String[] fields = {"message", "user", "level", "thread", "logger", "sourceFile", "patternText",
                                    "correlationIdText", "messageIdText", "flowNameText", "endpointText"};
                 MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer);
                 Query textQuery = parser.parse(queryString);

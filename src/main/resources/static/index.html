@@ -2376,6 +2376,19 @@
             const resultsEl = document.getElementById('downloadResults');
             resultsEl.innerHTML = '';
 
+            // Show download location
+            if (result.message) {
+                const locationSection = document.createElement('div');
+                locationSection.style.marginBottom = '15px';
+                locationSection.style.padding = '10px';
+                locationSection.style.background = '#d4edda';
+                locationSection.style.border = '1px solid #c3e6cb';
+                locationSection.style.borderRadius = '4px';
+                locationSection.style.color = '#155724';
+                locationSection.innerHTML = `<strong>📁 ${result.message}</strong>`;
+                resultsEl.appendChild(locationSection);
+            }
+
             if (result.downloadedFiles && result.downloadedFiles.length > 0) {
                 const section = document.createElement('div');
                 section.innerHTML = '<h3>Downloaded Files:</h3>';

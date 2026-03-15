@@ -92,10 +92,19 @@ public class LogDownloadController {
             // Prepare response
             Map<String, Object> response = new HashMap<>();
             response.put("success", !result.hasErrors() || result.getTotalFiles() > 0);
+            response.put("targetPath", targetPath != null ? targetPath : properties.getLogsDir());
             response.put("downloadedFiles", result.getDownloadedFiles());
             response.put("extractedFiles", result.getExtractedFiles());
             response.put("totalFiles", result.getTotalFiles());
             response.put("errors", result.getErrors());
+
+            if (result.getTotalFiles() > 0) {
+                String absolutePath = java.nio.file.Paths.get(
+                    targetPath != null ? targetPath : properties.getLogsDir()
+                ).toAbsolutePath().toString();
+                response.put("message", "Downloaded " + result.getTotalFiles() +
+                    " file(s) to: " + absolutePath);
+            }
 
             if (result.hasErrors() && result.getTotalFiles() == 0) {
                 return ResponseEntity.internalServerError().body(response);

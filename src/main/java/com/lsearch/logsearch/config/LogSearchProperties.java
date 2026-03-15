@@ -136,8 +136,9 @@ public class LogSearchProperties {
     }
 
     /**
-     * Convert hierarchical environment structure to flat list of download locations.
-     * This maintains compatibility with existing code.
+     * Get all download locations from hierarchical environment configuration.
+     * Converts: Environment → System → Servers into flat list of DownloadLocations
+     * for runtime processing while preserving metadata.
      */
     public List<DownloadLocation> getDownloadLocations() {
         List<DownloadLocation> locations = new ArrayList<>();
