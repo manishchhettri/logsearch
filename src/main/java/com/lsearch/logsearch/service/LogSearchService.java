@@ -103,31 +103,59 @@ public class LogSearchService {
             return queryText;
         }
 
-        // Pattern to match field:value where value may contain spaces or special characters (like dots)
-        // Uses negative lookahead to match everything except space before boolean operators
+        // Check if query contains boolean operators
+        boolean hasBooleanOps = queryText.matches(".*\\b(AND|OR|NOT)\\b.*");
+
+        // Pattern to match valid field:value queries (where field is a known field name)
+        java.util.regex.Pattern fieldPattern = java.util.regex.Pattern.compile(
+            "\\b(sourceFile|correlationId|messageId|flowName|endpoint|user|level|logger|thread):",
+            java.util.regex.Pattern.CASE_INSENSITIVE
+        );
+
+        // Check if query contains valid field queries
+        boolean hasValidFieldQuery = fieldPattern.matcher(queryText).find();
+
+        // If query has no boolean operators and no valid field queries,
+        // and it contains special characters that could cause parse errors,
+        // escape special characters using QueryParser.escape()
+        if (!hasBooleanOps && !hasValidFieldQuery) {
+            // Check for problematic characters
+            if (queryText.contains(":") || queryText.contains("[") || queryText.contains("]") ||
+                queryText.contains("'") || queryText.contains("(") || queryText.contains(")") ||
+                queryText.contains("+") || queryText.contains("-")) {
+                // Use Lucene's built-in escape method to escape special characters
+                // This escapes: + - && || ! ( ) { } [ ] ^ " ~ * ? : \ /
+                String escaped = org.apache.lucene.queryparser.classic.QueryParser.escape(queryText);
+                log.debug("Escaped special characters: [{}] -> [{}]", queryText, escaped);
+                return escaped;
+            }
+        }
+
+        // Otherwise, process field queries and escape special characters in brackets
+        String escaped = queryText.replace("[", "\\[").replace("]", "\\]");
+
+        // Pattern to match field:value where value may contain spaces or special characters
         java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
             "\\b(sourceFile|correlationId|messageId|flowName|endpoint|user|level|logger|thread):((?:(?!\\s+(?:AND|OR|NOT)\\b)[^\"\\s]|(?!\\s+(?:AND|OR|NOT)\\b)\\s)+)",
             java.util.regex.Pattern.CASE_INSENSITIVE
         );
 
-        java.util.regex.Matcher matcher = pattern.matcher(queryText);
+        java.util.regex.Matcher matcher = pattern.matcher(escaped);
         StringBuffer result = new StringBuffer();
 
         while (matcher.find()) {
             String field = matcher.group(1);
-            String value = matcher.group(2).trim(); // Trim any trailing spaces
+            String value = matcher.group(2).trim();
 
-            // Quote the value if it contains spaces or special characters (like dots) and isn't already quoted
-            boolean needsQuoting = (value.contains(" ") || value.contains(".")) &&
+            // Quote the value if it contains spaces or special characters and isn't already quoted
+            boolean needsQuoting = (value.contains(" ") || value.contains(".") || value.contains(":")) &&
                                    !value.startsWith("\"") && !value.endsWith("\"");
 
             if (needsQuoting) {
-                // Need to escape special chars in replacement ($ and \)
                 String quotedValue = java.util.regex.Matcher.quoteReplacement(field + ":\"" + value + "\"");
                 matcher.appendReplacement(result, quotedValue);
                 log.debug("Quoted field value: {}:\"{}\"", field, value);
             } else {
-                // Keep as-is
                 matcher.appendReplacement(result, matcher.group(0));
             }
         }
@@ -587,6 +615,9 @@ public class LogSearchService {
     public AggregationResult getAggregations(String queryText, ZonedDateTime startTime, ZonedDateTime endTime) throws Exception {
         long startMs = System.currentTimeMillis();
 
+        // Preprocess query to handle special characters (same as main search)
+        queryText = preprocessQuery(queryText);
+
         List<String> datesToSearch = getDateRangeDirs(startTime, endTime);
 
         if (datesToSearch.isEmpty()) {
@@ -709,20 +740,24 @@ public class LogSearchService {
                     }
 
                     // Aggregate by pattern (fingerprinting)
-                    String pattern = doc.get("pattern");
-                    if (pattern != null && !pattern.isEmpty()) {
-                        PatternData patternData = patternCounts.computeIfAbsent(pattern,
-                            k -> new PatternData(pattern));
-                        patternData.incrementCount();
+                    // Extract first-line pattern from the actual message for cleaner grouping
+                    // This avoids grouping by full stack traces
+                    if (message != null && !message.isEmpty()) {
+                        String firstLinePattern = PatternExtractor.extractFirstLinePattern(message);
+                        if (PatternExtractor.isMeaningfulPattern(firstLinePattern)) {
+                            PatternData patternData = patternCounts.computeIfAbsent(firstLinePattern,
+                                k -> new PatternData(firstLinePattern));
+                            patternData.incrementCount();
 
-                        // Store sample message if not set
-                        if (patternData.getSampleMessage() == null) {
-                            patternData.setSampleMessage(message);
-                        }
+                            // Store sample message if not set
+                            if (patternData.getSampleMessage() == null) {
+                                patternData.setSampleMessage(message);
+                            }
 
-                        // Track most common level for this pattern
-                        if (level != null) {
-                            patternData.addLevel(level);
+                            // Track most common level for this pattern
+                            if (level != null) {
+                                patternData.addLevel(level);
+                            }
                         }
                     }
 
@@ -798,7 +833,7 @@ public class LogSearchService {
                 .map(data -> {
                     double percentage = total > 0 ? (data.getCount() * 100.0 / total) : 0;
                     return PatternSummary.builder()
-                            .pattern(data.getPattern())
+                            .pattern(data.getPattern())  // Already first-line pattern from aggregation
                             .count(data.getCount())
                             .percentage(percentage)
                             .sampleMessage(data.getSampleMessage())

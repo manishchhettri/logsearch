@@ -112,6 +112,32 @@ public class PatternExtractor {
     }
 
     /**
+     * Extract only the first line of a log message for display purposes.
+     * This is useful for pattern summaries where we don't want to show full stack traces.
+     *
+     * @param message The original log message
+     * @return Pattern from first line only
+     */
+    public static String extractFirstLinePattern(String message) {
+        if (message == null || message.trim().isEmpty()) {
+            return "";
+        }
+
+        // Get the first line (before first newline)
+        String firstLine = message.split("\\n")[0].trim();
+
+        // Extract pattern from first line only
+        String pattern = extractPattern(firstLine);
+
+        // Limit to reasonable display length
+        if (pattern.length() > 200) {
+            return pattern.substring(0, 197) + "...";
+        }
+
+        return pattern;
+    }
+
+    /**
      * Check if a pattern is meaningful (not too generic).
      *
      * A pattern is considered meaningful if it has some specific text,
