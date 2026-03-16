@@ -58,6 +58,8 @@ nohup.out
 # INTEGRATION_COMPLETE.md
 # IMPLEMENTATION_SUMMARY.md
 
+WINDOWS_DIAGNOSTICS.md
+
 ### macOS ###
 .DS_Store
 
