@@ -118,23 +118,35 @@ public class LogPatternDetector {
         if (cachedPattern != null) {
             LogEntry entry = cachedPattern.tryParse(line, sourceFile, lineNumber, zoneId);
             if (entry != null) {
+                log.trace("Parsed with cached pattern '{}': level={}, user={}, message='{}'",
+                    cachedPattern.getName(),
+                    entry.getLevel(),
+                    entry.getUser(),
+                    entry.getMessage() != null && entry.getMessage().length() > 50
+                        ? entry.getMessage().substring(0, 50) + "..."
+                        : entry.getMessage());
                 return entry;
             }
             // Pattern failed, clear cache and try detection again
             detectedPatterns.remove(sourceFile);
-            log.debug("Cached pattern failed for {}, retrying detection", sourceFile);
+            log.warn("Cached pattern '{}' failed for file {} at line {}. Line: '{}'",
+                cachedPattern.getName(), sourceFile, lineNumber,
+                line.length() > 100 ? line.substring(0, 100) + "..." : line);
         }
 
         // Tier 1: Try all hardcoded patterns in library
+        log.debug("Trying {} hardcoded patterns for line {} in {}", patternLibrary.size(), lineNumber, sourceFile);
         for (LogFormatPattern pattern : patternLibrary) {
             LogEntry entry = pattern.tryParse(line, sourceFile, lineNumber, zoneId);
             if (entry != null) {
                 // Cache the detected pattern for this file
                 detectedPatterns.put(sourceFile, pattern);
-                log.info("Auto-detected log format '{}' for file: {}", pattern.getName(), sourceFile);
+                log.info("Auto-detected log format '{}' for file: {}. Extracted: level={}, user={}, thread={}",
+                    pattern.getName(), sourceFile, entry.getLevel(), entry.getUser(), entry.getThread());
                 return entry;
             }
         }
+        log.debug("No hardcoded pattern matched for line {} in {}", lineNumber, sourceFile);
 
         // Tier 2: Try adaptive pattern builder (analyzes structure dynamically)
         LogEntry adaptiveEntry = tryAdaptivePattern(line, sourceFile, lineNumber);

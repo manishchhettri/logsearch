@@ -85,6 +85,9 @@ public class LuceneIndexService {
         }
     }
 
+    private static boolean diagnosticLogged = false;
+    private static int docCount = 0;
+
     public void indexLogEntry(LogEntry entry) throws IOException {
         String date = entry.getTimestamp().toLocalDate().format(DateTimeFormatter.ISO_DATE);
         IndexWriter writer = getOrCreateIndexWriter(date);
@@ -101,6 +104,12 @@ public class LuceneIndexService {
         // Level field - searchable and stored (INFO, WARN, ERROR, etc.)
         if (entry.getLevel() != null && !entry.getLevel().isEmpty()) {
             doc.add(new TextField("level", entry.getLevel(), Field.Store.YES));
+        } else {
+            if (!diagnosticLogged && docCount < 5) {
+                log.warn("DIAGNOSTIC: Entry with NULL or EMPTY level field - timestamp: {}, message: '{}'",
+                    entry.getTimestamp(), entry.getMessage() != null && entry.getMessage().length() > 50
+                        ? entry.getMessage().substring(0, 50) + "..." : entry.getMessage());
+            }
         }
 
         // Thread field - searchable and stored
@@ -147,6 +156,27 @@ public class LuceneIndexService {
 
         if (entry.getEnvironment() != null && !entry.getEnvironment().isEmpty()) {
             doc.add(new StringField("environment", entry.getEnvironment(), Field.Store.YES));
+        }
+
+        // Diagnostic logging for first few documents
+        if (!diagnosticLogged && docCount < 3) {
+            docCount++;
+            StringBuilder fieldInfo = new StringBuilder();
+            fieldInfo.append("INDEXED DOCUMENT #").append(docCount).append(":\n");
+            fieldInfo.append("  timestamp: ").append(entry.getTimestamp()).append("\n");
+            fieldInfo.append("  level: '").append(entry.getLevel()).append("'\n");
+            fieldInfo.append("  user: '").append(entry.getUser()).append("'\n");
+            fieldInfo.append("  thread: '").append(entry.getThread()).append("'\n");
+            fieldInfo.append("  logger: '").append(entry.getLogger()).append("'\n");
+            fieldInfo.append("  message: '").append(entry.getMessage() != null && entry.getMessage().length() > 80
+                ? entry.getMessage().substring(0, 80) + "..." : entry.getMessage()).append("'\n");
+            fieldInfo.append("  sourceFile: ").append(entry.getSourceFile());
+            log.info(fieldInfo.toString());
+
+            if (docCount >= 3) {
+                diagnosticLogged = true;
+                log.info("DIAGNOSTIC: Indexed sample documents shown. Suppressing further diagnostic output.");
+            }
         }
 
         // Integration platform support fields

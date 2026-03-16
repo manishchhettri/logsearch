@@ -144,8 +144,21 @@ public class LogSearchService {
                                int page, int pageSize, List<String> indexes, List<String> environments) throws Exception {
         long startMs = System.currentTimeMillis();
 
+        log.info("=== SEARCH DIAGNOSTICS START ===");
+        log.info("OS: {}, File.separator: {}", System.getProperty("os.name"), System.getProperty("file.separator"));
+        log.info("Original query: '{}'", queryText);
+        log.info("Time range: {} to {}", startTime, endTime);
+        log.info("Page: {}, PageSize: {}", page, pageSize);
+
         // Preprocess query to handle paths with spaces
+        String originalQuery = queryText;
         queryText = preprocessQuery(queryText);
+
+        if (!originalQuery.equals(queryText)) {
+            log.info("Preprocessed query: '{}' -> '{}'", originalQuery, queryText);
+        } else {
+            log.info("Query unchanged after preprocessing");
+        }
 
         boolean chunkingEnabled = properties.getChunking() != null && properties.getChunking().isEnabled();
 
@@ -456,8 +469,15 @@ public class LogSearchService {
                 String[] fields = {"message", "user", "level", "thread", "logger", "sourceFile", "patternText",
                                    "correlationIdText", "messageIdText", "flowNameText", "endpointText"};
                 MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer);
-                Query textQuery = parser.parse(queryText);
-                queryBuilder.add(textQuery, BooleanClause.Occur.MUST);
+
+                try {
+                    Query textQuery = parser.parse(queryText);
+                    log.info("Lucene query parsed successfully: {}", textQuery.toString());
+                    queryBuilder.add(textQuery, BooleanClause.Occur.MUST);
+                } catch (Exception e) {
+                    log.error("CRITICAL: Failed to parse query '{}'. Error: {} - {}", queryText, e.getClass().getSimpleName(), e.getMessage());
+                    throw e;
+                }
             }
 
             // Time range query
@@ -488,9 +508,13 @@ public class LogSearchService {
 
             Query finalQuery = queryBuilder.build();
 
+            log.info("Final Lucene query for date {}: {}", date, finalQuery.toString());
+
             // Execute search (get more than needed for pagination across indexes)
             TopDocs topDocs = searcher.search(finalQuery, 10000);
             totalHits = topDocs.totalHits.value;
+
+            log.info("Date index {} returned {} hits", date, totalHits);
 
             // Collect results
             for (ScoreDoc scoreDoc : topDocs.scoreDocs) {

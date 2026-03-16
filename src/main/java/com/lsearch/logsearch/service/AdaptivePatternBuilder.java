@@ -91,6 +91,10 @@ public class AdaptivePatternBuilder {
             return null;
         }
 
+        log.info("Built adaptive pattern - Regex: {}", pattern.getName());
+        log.info("  Structure: {}", classification.getStructureDescription());
+        log.info("  Timestamp format: {}", classification.timestampFormat);
+
         // Validate pattern on remaining sample lines
         double successRate = validatePattern(pattern, sampleLines, zoneId);
 
@@ -99,7 +103,8 @@ public class AdaptivePatternBuilder {
                      classification.getStructureDescription(), successRate * 100);
             return pattern;
         } else {
-            log.debug("Adaptive pattern validation failed: {:.1f}% success rate", successRate * 100);
+            log.warn("Adaptive pattern validation failed: {:.1f}% success rate. Pattern may not work correctly.",
+                successRate * 100);
             return null;
         }
     }
@@ -111,8 +116,11 @@ public class AdaptivePatternBuilder {
         List<String> brackets = extractBrackets(line);
 
         if (brackets.isEmpty()) {
+            log.debug("No brackets found in line: {}", line.substring(0, Math.min(100, line.length())));
             return null;
         }
+
+        log.debug("Found {} bracketed fields to classify", brackets.size());
 
         FieldClassification classification = new FieldClassification();
         classification.totalBrackets = brackets.size();
@@ -133,7 +141,7 @@ public class AdaptivePatternBuilder {
             if (classification.levelIndex == -1 && logLevel != null) {
                 classification.levelIndex = i;
                 classification.level = logLevel;
-                log.debug("  Bracket {}: LOG LEVEL (uppercase) -> {}", i, field);
+                log.info("  Bracket {}: LOG LEVEL (uppercase) -> '{}' detected as {}", i, field, logLevel);
                 continue;
             }
 
@@ -142,7 +150,7 @@ public class AdaptivePatternBuilder {
             if (classification.levelIndex == -1 && logLevel != null) {
                 classification.levelIndex = i;
                 classification.level = logLevel;
-                log.debug("  Bracket {}: LOG LEVEL (mixed) -> {}", i, field);
+                log.info("  Bracket {}: LOG LEVEL (mixed) -> '{}' detected as {}", i, field, logLevel);
                 continue;
             }
 
