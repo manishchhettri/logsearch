@@ -362,6 +362,20 @@
             box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.15);
         }
 
+        .btn-utility.active {
+            background: #0366d6;
+            color: #ffffff;
+            border-color: #0366d6;
+            box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.2);
+            font-weight: 600;
+        }
+
+        .btn-utility.active:hover {
+            background: #0256c5;
+            border-color: #0256c5;
+            box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.25);
+        }
+
         .search-form {
             display: grid;
             gap: 15px;
@@ -1534,28 +1548,40 @@
                 </div>
 
                 <div class="form-row">
-                    <label for="startTime">Start Time:</label>
-                    <div style="display: flex; gap: 10px; align-items: center; flex: 1;">
-                        <input type="datetime-local" id="startTime" required style="flex: 1;" onchange="currentRelativeTime = null;">
-                        <div style="display: flex; gap: 5px;">
-                            <button type="button" class="btn-utility" onclick="setTimeRange(1)" style="font-size: 11px; padding: 6px 10px;">Last 1h</button>
-                            <button type="button" class="btn-utility" onclick="setTimeRange(6)" style="font-size: 11px; padding: 6px 10px;">6h</button>
-                            <button type="button" class="btn-utility" onclick="setTimeRange(24)" style="font-size: 11px; padding: 6px 10px;">24h</button>
-                            <button type="button" class="btn-utility" onclick="setTimeRange(48)" style="font-size: 11px; padding: 6px 10px;">2d</button>
-                            <button type="button" class="btn-utility" onclick="setTimeRange(168)" style="font-size: 11px; padding: 6px 10px;">7d</button>
+                    <label>Quick Time Range:</label>
+                    <div style="display: flex; flex-direction: column; gap: 8px; flex: 1;">
+                        <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                            <button type="button" class="btn-utility" onclick="setTimeRange(1)" style="font-size: 11px; padding: 6px 12px;">1h</button>
+                            <button type="button" class="btn-utility" onclick="setTimeRange(6)" style="font-size: 11px; padding: 6px 12px;">6h</button>
+                            <button type="button" class="btn-utility" onclick="setTimeRange(12)" style="font-size: 11px; padding: 6px 12px;">12h</button>
+                            <button type="button" class="btn-utility" onclick="setTimeRange(24)" style="font-size: 11px; padding: 6px 12px;">24h</button>
+                            <button type="button" class="btn-utility" onclick="setTimeRange(48)" style="font-size: 11px; padding: 6px 12px;">2d</button>
+                            <button type="button" class="btn-utility" onclick="setTimeRange(168)" style="font-size: 11px; padding: 6px 12px;">7d</button>
+                        </div>
+                        <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                            <button type="button" class="btn-utility" onclick="setTimeRange(720)" style="font-size: 11px; padding: 6px 12px;">1mo</button>
+                            <button type="button" class="btn-utility" onclick="setTimeRange(1440)" style="font-size: 11px; padding: 6px 12px;">2mo</button>
+                            <button type="button" class="btn-utility" onclick="setTimeRange(2160)" style="font-size: 11px; padding: 6px 12px;">3mo</button>
+                            <button type="button" class="btn-utility" onclick="setTimeRange(4320)" style="font-size: 11px; padding: 6px 12px;">6mo</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="form-row">
+                    <label for="startTime">Start Time:</label>
+                    <input type="datetime-local" id="startTime" required onchange="currentRelativeTime = null; clearActiveTimeRangeButton();">
+                </div>
+
+                <div class="form-row">
                     <label for="endTime">End Time:</label>
-                    <input type="datetime-local" id="endTime" required onchange="currentRelativeTime = null;">
+                    <input type="datetime-local" id="endTime" required onchange="currentRelativeTime = null; clearActiveTimeRangeButton();">
                 </div>
 
                 <div class="form-row">
                     <label></label>
                     <div class="button-group">
                         <button class="btn-primary" onclick="search()">Search</button>
+                        <button class="btn-secondary" onclick="clearSearch()">Clear</button>
                         <button class="btn-primary btn-save-search" onclick="saveCurrentSearch()">Save Search</button>
                         <button id="viewFlowBtn" class="btn-flow hidden" onclick="openFlowDiagram()">View Flow</button>
                     </div>
@@ -1838,6 +1864,62 @@
 
             // Track that we're using relative time
             currentRelativeTime = hours;
+
+            // Update active state on time range buttons
+            updateActiveTimeRangeButton(hours);
+        }
+
+        function updateActiveTimeRangeButton(hours) {
+            // Remove active class from all time range buttons
+            const timeRangeButtons = document.querySelectorAll('.btn-utility[onclick^="setTimeRange"]');
+            timeRangeButtons.forEach(btn => btn.classList.remove('active'));
+
+            // Add active class to the clicked button
+            if (hours !== null) {
+                timeRangeButtons.forEach(btn => {
+                    // Extract hours from onclick attribute: onclick="setTimeRange(6)" -> 6
+                    const match = btn.getAttribute('onclick').match(/setTimeRange\((\d+)\)/);
+                    if (match && parseInt(match[1]) === hours) {
+                        btn.classList.add('active');
+                    }
+                });
+            }
+        }
+
+        function clearActiveTimeRangeButton() {
+            // Remove active class from all time range buttons
+            const timeRangeButtons = document.querySelectorAll('.btn-utility[onclick^="setTimeRange"]');
+            timeRangeButtons.forEach(btn => btn.classList.remove('active'));
+        }
+
+        // Helper function to get short time range label (for buttons and badges)
+        function getTimeRangeLabel(hours) {
+            if (hours === 1) return '1h';
+            if (hours === 6) return '6h';
+            if (hours === 12) return '12h';
+            if (hours === 24) return '24h';
+            if (hours === 48) return '2d';
+            if (hours === 168) return '7d';
+            if (hours === 720) return '1mo';
+            if (hours === 1440) return '2mo';
+            if (hours === 2160) return '3mo';
+            if (hours === 4320) return '6mo';
+            return `${hours}h`;
+        }
+
+        // Helper function to get long time range label (for dashboard metadata)
+        function getTimeRangeLabelLong(hours) {
+            if (hours === 1) return '1 hour';
+            if (hours === 6) return '6 hours';
+            if (hours === 12) return '12 hours';
+            if (hours === 24) return '24 hours';
+            if (hours === 48) return '2 days';
+            if (hours === 168) return '7 days';
+            if (hours === 720) return '1 month';
+            if (hours === 1440) return '2 months';
+            if (hours === 2160) return '3 months';
+            if (hours === 4320) return '6 months';
+            return `${hours} hours`;
         }
 
         function formatDateTimeLocal(date) {
@@ -2346,6 +2428,55 @@
                     }
                 }
             });
+        }
+
+        function clearSearch() {
+            // Clear query field
+            document.getElementById('query').value = '';
+
+            // Reset time range to last 24 hours (default)
+            setLast24Hours();
+
+            // Clear active time range button highlighting
+            clearActiveTimeRangeButton();
+
+            // Hide results display (don't destroy HTML structure)
+            document.getElementById('results').classList.add('hidden');
+            document.getElementById('resultsContainer').innerHTML = '';
+            document.getElementById('resultsInfo').textContent = '';
+            document.getElementById('pagination').innerHTML = '';
+
+            // Hide loading and no results messages
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('noResults').classList.add('hidden');
+
+            // Clear analytics/facets
+            document.getElementById('analytics').classList.add('hidden');
+            document.getElementById('facetsContainer').innerHTML = '';
+            document.getElementById('statsGrid').innerHTML = '';
+
+            // Clear charts
+            if (logLevelsChart) {
+                logLevelsChart.destroy();
+                logLevelsChart = null;
+            }
+            if (exceptionsChart) {
+                exceptionsChart.destroy();
+                exceptionsChart = null;
+            }
+            if (timelineChart) {
+                timelineChart.destroy();
+                timelineChart = null;
+            }
+
+            // Clear status message
+            document.getElementById('status').classList.add('hidden');
+            document.getElementById('status').textContent = '';
+
+            // Reset current aggregations
+            currentAggregations = null;
+
+            showStatus('Search cleared', 'success');
         }
 
         async function search(page = 0) {
@@ -3361,7 +3492,7 @@
                 let timeIndicator = '';
                 if (search.relativeTime) {
                     const hours = search.relativeTime;
-                    let label = hours === 1 ? '1h' : hours === 6 ? '6h' : hours === 24 ? '24h' : hours === 48 ? '2d' : hours === 168 ? '7d' : `${hours}h`;
+                    let label = getTimeRangeLabel(hours);
                     timeIndicator = `<span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;" title="Auto-updates to show last ${label}">🔄 ${label}</span>`;
                 }
 
@@ -3380,12 +3511,40 @@
             });
         }
 
+        // Load context configuration from backend on page load
+        async function loadContextConfig() {
+            try {
+                const response = await fetch('/api/config/context');
+                if (response.ok) {
+                    const config = await response.json();
+
+                    // Update slider attributes
+                    const slider = document.getElementById('contextLinesSlider');
+                    slider.min = config.minLines;
+                    slider.max = config.maxLines;
+                    slider.value = config.defaultLines;
+                    slider.step = config.step;
+
+                    // Update label
+                    updateContextLinesLabel(config.defaultLines);
+
+                    console.log('Context configuration loaded:', config);
+                } else {
+                    console.warn('Failed to load context configuration, using defaults');
+                }
+            } catch (error) {
+                console.error('Error loading context configuration:', error);
+            }
+        }
+
         // Initialize with last 24 hours
         setLast24Hours();
         // Load saved searches on page load
         renderSavedSearches();
         // Load download locations on page load
         loadDownloadLocations();
+        // Load context configuration on page load
+        loadContextConfig();
 
         // Dashboard Management
         function loadDashboards() {
@@ -3494,7 +3653,7 @@
             // Add refresh button for relative time dashboards
             if (dashboard.relativeTime) {
                 const hours = dashboard.relativeTime;
-                const label = hours === 1 ? '1h' : hours === 6 ? '6h' : hours === 24 ? '24h' : hours === 48 ? '2d' : hours === 168 ? '7d' : `${hours}h`;
+                const label = getTimeRangeLabel(hours);
                 titleEl.innerHTML = `
                     ${escapeHtml(dashboard.name)}
                     <span style="background: #28a745; color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; margin-left: 10px;" title="Auto-updates to show last ${label}">🔄 Last ${label}</span>
@@ -3673,7 +3832,7 @@
 
                     if (dashboard.relativeTime) {
                         const hours = dashboard.relativeTime;
-                        const label = hours === 1 ? '1 hour' : hours === 6 ? '6 hours' : hours === 24 ? '24 hours' : hours === 48 ? '2 days' : hours === 168 ? '7 days' : `${hours} hours`;
+                        const label = getTimeRangeLabelLong(hours);
                         metadataHtml += `<div><strong>Time Range:</strong> Last ${label} <span style="color: #28a745;">(auto-updating)</span></div>`;
                     } else {
                         metadataHtml += `<div><strong>Time Range:</strong> ${start} to ${end} <span style="color: #6c757d;">(fixed)</span></div>`;

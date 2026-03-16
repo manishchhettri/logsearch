@@ -110,6 +110,13 @@ log-search:
       false-positive-rate: 0.01       # 1% false positive rate (lower = larger filter)
       estimated-terms-per-chunk: 10000  # Expected unique terms (auto-adjusted)
 
+  # Context view configuration (UI settings)
+  context:
+    default-lines: 500                # Default number of context lines to show
+    min-lines: 10                     # Minimum slider value
+    max-lines: 1000                   # Maximum slider value (increase for larger log files)
+    step: 10                          # Slider step increment
+
   # Using legacy single-directory mode
   # When no environments/download-locations are configured,
   # IndexConfigService creates a default "main" index from logs-dir

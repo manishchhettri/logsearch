@@ -36,6 +36,9 @@ public class LogSearchProperties {
     // Metadata configuration
     private MetadataConfig metadata = new MetadataConfig();
 
+    // Context view configuration
+    private ContextConfig context = new ContextConfig();
+
     // Hierarchical environment-based configuration
     private Map<String, EnvironmentConfig> environments;
 
@@ -216,6 +219,14 @@ public class LogSearchProperties {
         this.metadata = metadata;
     }
 
+    public ContextConfig getContext() {
+        return context;
+    }
+
+    public void setContext(ContextConfig context) {
+        this.context = context;
+    }
+
     // Nested configuration classes
 
     public static class ChunkingConfig {
@@ -344,6 +355,45 @@ public class LogSearchProperties {
 
         public void setEstimatedTermsPerChunk(int estimatedTermsPerChunk) {
             this.estimatedTermsPerChunk = estimatedTermsPerChunk;
+        }
+    }
+
+    public static class ContextConfig {
+        private int defaultLines = 500;
+        private int minLines = 10;
+        private int maxLines = 1000;
+        private int step = 10;
+
+        public int getDefaultLines() {
+            return defaultLines;
+        }
+
+        public void setDefaultLines(int defaultLines) {
+            this.defaultLines = defaultLines;
+        }
+
+        public int getMinLines() {
+            return minLines;
+        }
+
+        public void setMinLines(int minLines) {
+            this.minLines = minLines;
+        }
+
+        public int getMaxLines() {
+            return maxLines;
+        }
+
+        public void setMaxLines(int maxLines) {
+            this.maxLines = maxLines;
+        }
+
+        public int getStep() {
+            return step;
+        }
+
+        public void setStep(int step) {
+            this.step = step;
         }
     }
 }
