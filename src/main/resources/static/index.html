@@ -1547,6 +1547,14 @@
                         <h3 id="contextTitle">Log Context</h3>
                         <button class="modal-close" onclick="closeContextModal()">&times;</button>
                     </div>
+                    <div class="modal-controls" style="padding: 12px 20px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 15px;">
+                        <label style="font-size: 12px; color: #666; white-space: nowrap;">Context Lines:</label>
+                        <input type="range" id="contextLinesSlider" min="10" max="1000" value="500" step="10"
+                               style="flex: 1; min-width: 200px;"
+                               oninput="updateContextLinesLabel(this.value)">
+                        <span id="contextLinesValue" style="font-size: 13px; color: #333; font-weight: 600; min-width: 80px;">500 lines</span>
+                        <button class="btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="reloadContext()">Reload</button>
+                    </div>
                     <div class="modal-body" id="contextBody">
                         Loading...
                     </div>
@@ -3042,10 +3050,17 @@
             window.URL.revokeObjectURL(url);
         }
 
+        // Store current context request for reload
+        let currentContextRequest = null;
+
         async function showContext(sourceFile, lineNumber) {
             const modal = document.getElementById('contextModal');
             const title = document.getElementById('contextTitle');
             const body = document.getElementById('contextBody');
+            const slider = document.getElementById('contextLinesSlider');
+
+            // Store current request
+            currentContextRequest = { sourceFile, lineNumber };
 
             // Show modal with loading state - display full path for clarity
             title.textContent = `Context for ${sourceFile}:${lineNumber}`;
@@ -3054,10 +3069,11 @@
             modal.classList.add('show');
 
             try {
+                const contextLines = parseInt(slider.value);
                 const params = new URLSearchParams({
                     sourceFile: sourceFile,
                     lineNumber: lineNumber,
-                    contextLines: 10
+                    contextLines: contextLines
                 });
 
                 const response = await fetch(`/api/context?${params}`);
@@ -3074,6 +3090,16 @@
             }
         }
 
+        function updateContextLinesLabel(value) {
+            document.getElementById('contextLinesValue').textContent = `${value} lines`;
+        }
+
+        function reloadContext() {
+            if (currentContextRequest) {
+                showContext(currentContextRequest.sourceFile, currentContextRequest.lineNumber);
+            }
+        }
+
         function displayContext(data) {
             const body = document.getElementById('contextBody');
             body.innerHTML = '';
@@ -3083,12 +3109,26 @@
                 return;
             }
 
+            let targetLineElement = null;
+
             data.contextLines.forEach(line => {
                 const lineDiv = document.createElement('div');
                 lineDiv.className = 'context-line' + (line.isTarget ? ' target' : '');
                 lineDiv.innerHTML = `<span class="context-line-number">${line.lineNumber}</span>${highlightLogMessage(line.content)}`;
                 body.appendChild(lineDiv);
+
+                // Remember target line for scrolling
+                if (line.isTarget) {
+                    targetLineElement = lineDiv;
+                }
             });
+
+            // Scroll target line into view (centered if possible)
+            if (targetLineElement) {
+                setTimeout(() => {
+                    targetLineElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 100);
+            }
         }
 
         function closeContextModal(event) {

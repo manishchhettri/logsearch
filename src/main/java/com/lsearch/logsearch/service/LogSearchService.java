@@ -154,10 +154,11 @@ public class LogSearchService {
         String originalQuery = queryText;
         queryText = preprocessQuery(queryText);
 
-        if (!originalQuery.equals(queryText)) {
+        // Use Objects.equals to handle null safely
+        if (!java.util.Objects.equals(originalQuery, queryText)) {
             log.info("Preprocessed query: '{}' -> '{}'", originalQuery, queryText);
         } else {
-            log.info("Query unchanged after preprocessing");
+            log.info("Query unchanged after preprocessing (null or same)");
         }
 
         boolean chunkingEnabled = properties.getChunking() != null && properties.getChunking().isEnabled();
