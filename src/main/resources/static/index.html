@@ -41,15 +41,64 @@
 
         .facet-group {
             margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            background: white;
+            overflow: hidden;
         }
 
-        .facet-group h3 {
+        .facet-group-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
+        }
+
+        .facet-group-header:hover {
+            background: #e9ecef;
+        }
+
+        .facet-group-header h3 {
             font-size: 11px;
             color: #6c757d;
             text-transform: uppercase;
-            margin-bottom: 8px;
+            margin: 0;
             letter-spacing: 0.5px;
             font-weight: 600;
+        }
+
+        .facet-group-toggle {
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #6c757d;
+            transition: transform 0.3s;
+        }
+
+        .facet-group-toggle.collapsed {
+            transform: rotate(-90deg);
+        }
+
+        .facet-group-content {
+            padding: 8px;
+            transition: max-height 0.3s ease-out, opacity 0.3s;
+            max-height: 1000px;
+            opacity: 1;
+        }
+
+        .facet-group-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+            padding: 0 8px;
+            overflow: hidden;
         }
 
         .facet-item {
@@ -97,6 +146,58 @@
             font-weight: 600;
             flex-shrink: 0;
             margin-top: 2px;
+        }
+
+        /* Log Level Color Coding */
+        .level-badge {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+            flex-shrink: 0;
+        }
+
+        .level-badge.ERROR,
+        .level-badge.SEVERE,
+        .level-badge.FATAL {
+            background: #dc3545;
+            box-shadow: 0 0 4px rgba(220, 53, 69, 0.4);
+        }
+
+        .level-badge.WARN,
+        .level-badge.WARNING {
+            background: #ff9800;
+            box-shadow: 0 0 4px rgba(255, 152, 0, 0.4);
+        }
+
+        .level-badge.INFO {
+            background: #2196f3;
+            box-shadow: 0 0 4px rgba(33, 150, 243, 0.4);
+        }
+
+        .level-badge.DEBUG {
+            background: #4caf50;
+            box-shadow: 0 0 4px rgba(76, 175, 80, 0.4);
+        }
+
+        .level-badge.TRACE,
+        .level-badge.FINE,
+        .level-badge.FINER,
+        .level-badge.FINEST {
+            background: #9e9e9e;
+            box-shadow: 0 0 4px rgba(158, 158, 158, 0.4);
+        }
+
+        /* Enhanced facet item for log levels */
+        .facet-item.level-item {
+            display: flex;
+            align-items: center;
+        }
+
+        .facet-item.level-item .facet-label {
+            display: flex;
+            align-items: center;
         }
 
         /* Pattern Fingerprinting Styles */
@@ -156,7 +257,13 @@
         }
 
         .pattern-percentage {
-            font-weight: 600;
+            font-weight: 700;
+            color: #dc3545;
+            font-size: 12px;
+            background: #fff5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #ffdddd;
         }
 
         .pattern-level {
@@ -1406,8 +1513,11 @@
 
                     <!-- Timeline Chart -->
                     <div id="timelineSection" class="analytics-section hidden">
-                        <h2 id="timelineTitle">Timeline Distribution by Log Level</h2>
-                        <div class="chart-container">
+                        <div class="timeline-header" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;" onclick="toggleTimelineChart()">
+                            <h2 id="timelineTitle" style="margin: 0;">Timeline Distribution by Log Level</h2>
+                            <div id="timelineToggle" class="facet-group-toggle collapsed" style="font-size: 14px;">▼</div>
+                        </div>
+                        <div id="timelineContent" class="chart-container collapsed" style="overflow: hidden; transition: max-height 0.3s ease-out, opacity 0.3s; max-height: 0; opacity: 0;">
                             <canvas id="timelineChart"></canvas>
                         </div>
                     </div>
@@ -1778,10 +1888,25 @@
                 const patternGroup = document.createElement('div');
                 patternGroup.className = 'facet-group';
 
+                // Create collapsible header
+                const header = document.createElement('div');
+                header.className = 'facet-group-header';
+
                 const title = document.createElement('h3');
                 title.textContent = 'TOP PATTERNS';
                 title.style.color = '#d97706';
-                patternGroup.appendChild(title);
+
+                const toggle = document.createElement('div');
+                toggle.className = 'facet-group-toggle';
+                toggle.innerHTML = '▼';
+
+                header.appendChild(title);
+                header.appendChild(toggle);
+                patternGroup.appendChild(header);
+
+                // Create content container
+                const content = document.createElement('div');
+                content.className = 'facet-group-content';
 
                 agg.patternSummaries.slice(0, 10).forEach((pattern, index) => {
                     const item = document.createElement('div');
@@ -1829,8 +1954,16 @@
                         performSearch();
                     };
 
-                    patternGroup.appendChild(item);
+                    content.appendChild(item);
                 });
+
+                patternGroup.appendChild(content);
+
+                // Add toggle functionality
+                header.onclick = () => {
+                    content.classList.toggle('collapsed');
+                    toggle.classList.toggle('collapsed');
+                };
 
                 container.appendChild(patternGroup);
             }
@@ -1849,20 +1982,64 @@
                     const groupDiv = document.createElement('div');
                     groupDiv.className = 'facet-group';
 
+                    // Create collapsible header
+                    const header = document.createElement('div');
+                    header.className = 'facet-group-header';
+
                     const title = document.createElement('h3');
                     title.textContent = group.title;
-                    groupDiv.appendChild(title);
+
+                    const toggle = document.createElement('div');
+                    toggle.className = 'facet-group-toggle';
+                    toggle.innerHTML = '▼';
+
+                    header.appendChild(title);
+                    header.appendChild(toggle);
+                    groupDiv.appendChild(header);
+
+                    // Create content container
+                    const content = document.createElement('div');
+                    content.className = 'facet-group-content';
 
                     group.facets.slice(0, 5).forEach(facet => {
                         const item = document.createElement('div');
-                        item.className = 'facet-item';
-                        item.innerHTML = `
-                            <span class="facet-label" title="${escapeHtml(facet.value)}">${escapeHtml(facet.value)}</span>
-                            <span class="facet-count">${facet.count}</span>
-                        `;
+                        item.className = group.type === 'level' ? 'facet-item level-item' : 'facet-item';
+
+                        // Create label with color badge for log levels
+                        if (group.type === 'level') {
+                            const badge = document.createElement('span');
+                            badge.className = `level-badge ${facet.value}`;
+
+                            const label = document.createElement('span');
+                            label.className = 'facet-label';
+                            label.title = escapeHtml(facet.value);
+                            label.appendChild(badge);
+                            label.appendChild(document.createTextNode(escapeHtml(facet.value)));
+
+                            const count = document.createElement('span');
+                            count.className = 'facet-count';
+                            count.textContent = facet.count;
+
+                            item.appendChild(label);
+                            item.appendChild(count);
+                        } else {
+                            item.innerHTML = `
+                                <span class="facet-label" title="${escapeHtml(facet.value)}">${escapeHtml(facet.value)}</span>
+                                <span class="facet-count">${facet.count}</span>
+                            `;
+                        }
+
                         item.onclick = () => applyFacetFilter(group.type, facet.value);
-                        groupDiv.appendChild(item);
+                        content.appendChild(item);
                     });
+
+                    groupDiv.appendChild(content);
+
+                    // Add toggle functionality
+                    header.onclick = () => {
+                        content.classList.toggle('collapsed');
+                        toggle.classList.toggle('collapsed');
+                    };
 
                     container.appendChild(groupDiv);
                 }
@@ -1932,6 +2109,25 @@
                 displaySimpleTimeline(timelineData);
             } else {
                 document.getElementById('timelineSection').classList.add('hidden');
+            }
+        }
+
+        function toggleTimelineChart() {
+            const content = document.getElementById('timelineContent');
+            const toggle = document.getElementById('timelineToggle');
+
+            if (content.classList.contains('collapsed')) {
+                // Expand
+                content.classList.remove('collapsed');
+                content.style.maxHeight = '300px';
+                content.style.opacity = '1';
+                toggle.classList.remove('collapsed');
+            } else {
+                // Collapse
+                content.classList.add('collapsed');
+                content.style.maxHeight = '0';
+                content.style.opacity = '0';
+                toggle.classList.add('collapsed');
             }
         }
 

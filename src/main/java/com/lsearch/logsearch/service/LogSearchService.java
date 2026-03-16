@@ -103,10 +103,10 @@ public class LogSearchService {
             return queryText;
         }
 
-        // Pattern to match field:value where value may contain spaces
+        // Pattern to match field:value where value may contain spaces or special characters (like dots)
         // Uses negative lookahead to match everything except space before boolean operators
         java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-            "\\b(sourceFile|correlationId|messageId|flowName|endpoint):((?:(?!\\s+(?:AND|OR|NOT)\\b)[^\"\\s]|(?!\\s+(?:AND|OR|NOT)\\b)\\s)+)",
+            "\\b(sourceFile|correlationId|messageId|flowName|endpoint|user|level|logger|thread):((?:(?!\\s+(?:AND|OR|NOT)\\b)[^\"\\s]|(?!\\s+(?:AND|OR|NOT)\\b)\\s)+)",
             java.util.regex.Pattern.CASE_INSENSITIVE
         );
 
@@ -117,8 +117,11 @@ public class LogSearchService {
             String field = matcher.group(1);
             String value = matcher.group(2).trim(); // Trim any trailing spaces
 
-            // Quote the value if it contains spaces and isn't already quoted
-            if (value.contains(" ") && !value.startsWith("\"") && !value.endsWith("\"")) {
+            // Quote the value if it contains spaces or special characters (like dots) and isn't already quoted
+            boolean needsQuoting = (value.contains(" ") || value.contains(".")) &&
+                                   !value.startsWith("\"") && !value.endsWith("\"");
+
+            if (needsQuoting) {
                 // Need to escape special chars in replacement ($ and \)
                 String quotedValue = java.util.regex.Matcher.quoteReplacement(field + ":\"" + value + "\"");
                 matcher.appendReplacement(result, quotedValue);
