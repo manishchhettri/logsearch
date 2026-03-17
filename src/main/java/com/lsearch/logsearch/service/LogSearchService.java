@@ -98,10 +98,72 @@ public class LogSearchService {
      * This fixes issues where paths like "sourceFile:/path/with spaces/file.log"
      * would fail to parse correctly.
      */
+    /**
+     * Auto-quote dot-separated identifiers (package names, class names) in queries.
+     *
+     * Examples:
+     *   "core.framework" -> "\"core.framework\""
+     *   "core.framework ERROR" -> "\"core.framework\" ERROR"
+     *   "core.framework OR payment.service" -> "\"core.framework\" OR \"payment.service\""
+     *   "core.*.service" -> "core.*.service" (no change - has wildcard)
+     *   "core" -> "core" (no change - no dots)
+     *
+     * This prevents Lucene from tokenizing package names into separate terms,
+     * ensuring "core.framework" searches for the exact phrase, not "core OR framework".
+     */
+    private String autoQuoteDotSeparatedIdentifiers(String queryText) {
+        if (queryText == null || queryText.trim().isEmpty()) {
+            return queryText;
+        }
+
+        // Pattern to match dot-separated identifiers (no wildcards, no spaces within)
+        // Matches: word.word, word.word.word, etc.
+        // Must start with letter, can contain letters, numbers, dots, hyphens, underscores
+        // Does NOT match if:
+        //   - Already quoted
+        //   - Contains wildcards (* or ?)
+        //   - Part of a field:value query
+        java.util.regex.Pattern dotPattern = java.util.regex.Pattern.compile(
+            // Negative lookbehind: not preceded by quote or colon (field query)
+            "(?<![\":])" +
+            // The identifier: letter followed by word chars and dots
+            "\\b([a-zA-Z][a-zA-Z0-9_-]*\\.[a-zA-Z0-9._-]+)\\b" +
+            // Negative lookahead: not followed by quote
+            "(?!\")"
+        );
+
+        java.util.regex.Matcher matcher = dotPattern.matcher(queryText);
+        StringBuffer result = new StringBuffer();
+
+        while (matcher.find()) {
+            String identifier = matcher.group(1);
+
+            // Skip if contains wildcard characters (* or ?)
+            if (identifier.contains("*") || identifier.contains("?")) {
+                matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(identifier));
+                continue;
+            }
+
+            // Quote the identifier
+            String quoted = "\"" + identifier + "\"";
+            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(quoted));
+            log.debug("Auto-quoted identifier: {} -> {}", identifier, quoted);
+        }
+        matcher.appendTail(result);
+
+        return result.toString();
+    }
+
     private String preprocessQuery(String queryText) {
         if (queryText == null || queryText.trim().isEmpty()) {
             return queryText;
         }
+
+        // STEP 1: Auto-quote dot-separated identifiers (package names, class names)
+        // This handles queries like "core.framework" or "com.example.service"
+        // Pattern matches: word.word (with optional dots and hyphens, no wildcards)
+        // Examples: core.framework, java.util.List, com.example.service.PaymentService
+        queryText = autoQuoteDotSeparatedIdentifiers(queryText);
 
         // Check if query contains boolean operators
         boolean hasBooleanOps = queryText.matches(".*\\b(AND|OR|NOT)\\b.*");

@@ -1125,6 +1125,15 @@
             font-family: 'Monaco', 'Consolas', monospace;
         }
 
+        .highlight-search-term {
+            background: #ffeb3b;
+            color: #000;
+            padding: 2px 4px;
+            border-radius: 2px;
+            font-weight: 600;
+            box-shadow: 0 0 0 2px rgba(255, 235, 59, 0.3);
+        }
+
         /* Add to Dashboard Modal */
         .dashboard-modal-content {
             background: white;
@@ -1833,6 +1842,7 @@
         let currentAggregations = null;
         let currentResults = null; // Store current search results for export
         let currentRelativeTime = null; // Track if using relative time (1, 6, 24, 48, 168 hours)
+        let currentSearchQuery = ''; // Store current search query for highlighting
 
         // Check if user filter is active and update View Flow button visibility
         function updateViewFlowButtonVisibility() {
@@ -2433,6 +2443,7 @@
         function clearSearch() {
             // Clear query field
             document.getElementById('query').value = '';
+            currentSearchQuery = ''; // Clear search query for highlighting
 
             // Reset time range to last 24 hours (default)
             setLast24Hours();
@@ -2483,6 +2494,7 @@
             currentPage = page;
 
             const query = document.getElementById('query').value;
+            currentSearchQuery = query; // Store for highlighting
             const startTime = document.getElementById('startTime').value;
             const endTime = document.getElementById('endTime').value;
 
@@ -2802,7 +2814,44 @@
             let placeholderIndex = 0;
 
             // Define highlighting patterns (order matters - most specific first)
-            const patterns = [
+            const patterns = [];
+
+            // Add search term highlighting FIRST (highest priority - yellow background)
+            if (currentSearchQuery && currentSearchQuery.trim() !== '') {
+                // Extract search terms
+                // Split by spaces AND dots to handle package names like "core.framework"
+                // This ensures both "core" and "framework" get highlighted individually
+                const searchTerms = currentSearchQuery
+                    .split(/[\s.]+/)  // Split by spaces AND dots
+                    .map(term => term.trim())
+                    .filter(term => term.length > 0)
+                    .filter(term => !['AND', 'OR', 'NOT'].includes(term.toUpperCase())) // Skip boolean operators
+                    .map(term => {
+                        // Remove Lucene special characters that might be in the query
+                        return term.replace(/[+\-!(){}[\]^"~*?:\\]/g, '');
+                    })
+                    .filter(term => term.length > 2); // Only highlight terms with 3+ chars
+
+                // Add each search term as a pattern
+                searchTerms.forEach(term => {
+                    if (term.length > 0) {
+                        try {
+                            // Escape special regex characters
+                            const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            patterns.push({
+                                regex: new RegExp(`\\b(${escapedTerm})\\b`, 'gi'),
+                                className: 'highlight-search-term'
+                            });
+                        } catch (e) {
+                            // Skip invalid regex patterns
+                            console.warn('Invalid search term for highlighting:', term);
+                        }
+                    }
+                });
+            }
+
+            // Add other highlighting patterns
+            patterns.push(
                 // Java exceptions (before general error keywords)
                 {
                     regex: /\b([A-Z][a-zA-Z0-9]*Exception|[A-Z][a-zA-Z0-9]*Error)\b/g,
@@ -2843,7 +2892,7 @@
                     regex: /\b\d{4,}(?:\.\d+)?\s*(?:bytes|KB|MB|GB|TB|ms|seconds?|minutes?)?\b/gi,
                     className: 'highlight-number'
                 }
-            ];
+            );
 
             // Apply each pattern using placeholders
             patterns.forEach(pattern => {
