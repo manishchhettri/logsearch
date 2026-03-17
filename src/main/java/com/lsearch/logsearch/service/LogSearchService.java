@@ -116,20 +116,38 @@ public class LogSearchService {
             return queryText;
         }
 
-        // Pattern to match dot-separated identifiers (no wildcards, no spaces within)
-        // Matches: word.word, word.word.word, etc.
-        // Must start with letter, can contain letters, numbers, dots, hyphens, underscores
-        // Does NOT match if:
-        //   - Already quoted
-        //   - Contains wildcards (* or ?)
-        //   - Part of a field:value query
+        // First, check if this looks like a field query (contains known field names followed by colon)
+        // If so, skip auto-quoting entirely to avoid phrase queries on StringField
+        java.util.regex.Pattern fieldQueryPattern = java.util.regex.Pattern.compile(
+            "\\b(sourceFile|correlationId|messageId|flowName|endpoint|user|level|logger|thread|indexName|environment):",
+            java.util.regex.Pattern.CASE_INSENSITIVE
+        );
+        if (fieldQueryPattern.matcher(queryText).find()) {
+            log.debug("Skipping auto-quoting for field query: {}", queryText);
+            return queryText; // Don't auto-quote field queries
+        }
+
+        // Pattern to match dot-separated identifiers (Java package/class names)
+        // VERY CONSERVATIVE to avoid matching file paths or other non-package patterns
+        // Matches ONLY:
+        //   - Starts with lowercase letter (package convention)
+        //   - Contains only lowercase letters, digits, dots, underscores
+        //   - At least one dot
+        //   - No slashes, backslashes, spaces, or other special chars
+        // Examples:
+        //   ✅ core.framework
+        //   ✅ com.example.service
+        //   ✅ java.util.list
+        //   ❌ /Users/manish/Java Projects/... (has slashes/spaces)
+        //   ❌ C:\Users\... (has backslash)
+        //   ❌ Core.Framework (starts with uppercase - likely class name in logs)
         java.util.regex.Pattern dotPattern = java.util.regex.Pattern.compile(
-            // Negative lookbehind: not preceded by quote or colon (field query)
-            "(?<![\":])" +
-            // The identifier: letter followed by word chars and dots
-            "\\b([a-zA-Z][a-zA-Z0-9_-]*\\.[a-zA-Z0-9._-]+)\\b" +
-            // Negative lookahead: not followed by quote
-            "(?!\")"
+            // Negative lookbehind: not preceded by quote, slash, or backslash
+            "(?<![\":/\\\\])" +
+            // The identifier: MUST start with lowercase letter (package convention)
+            "\\b([a-z][a-z0-9_]*(?:\\.[a-z0-9_]+)+)\\b" +
+            // Negative lookahead: not followed by quote, slash, or backslash
+            "(?![\":/\\\\])"
         );
 
         java.util.regex.Matcher matcher = dotPattern.matcher(queryText);
@@ -159,11 +177,10 @@ public class LogSearchService {
             return queryText;
         }
 
-        // STEP 1: Auto-quote dot-separated identifiers (package names, class names)
-        // This handles queries like "core.framework" or "com.example.service"
-        // Pattern matches: word.word (with optional dots and hyphens, no wildcards)
-        // Examples: core.framework, java.util.List, com.example.service.PaymentService
-        queryText = autoQuoteDotSeparatedIdentifiers(queryText);
+        // STEP 1: Auto-quote dot-separated identifiers (DISABLED FOR NOW)
+        // Causing PhraseQuery issues on StringField fields
+        // Users can manually quote if needed: "core.framework"
+        // queryText = autoQuoteDotSeparatedIdentifiers(queryText);
 
         // Check if query contains boolean operators
         boolean hasBooleanOps = queryText.matches(".*\\b(AND|OR|NOT)\\b.*");
@@ -209,8 +226,21 @@ public class LogSearchService {
             String field = matcher.group(1);
             String value = matcher.group(2).trim();
 
-            // Quote the value if it contains spaces or special characters and isn't already quoted
-            boolean needsQuoting = (value.contains(" ") || value.contains(".") || value.contains(":")) &&
+            // IMPORTANT: Do NOT quote values for StringField fields (sourceFile, indexName, environment)
+            // These fields don't have position data and cannot handle PhraseQuery
+            java.util.Set<String> stringFields = new java.util.HashSet<>(java.util.Arrays.asList(
+                "sourcefile", "indexname", "environment", "integrationplatform",
+                "chunkid", "pattern" // These are also StringField (all lowercase for comparison)
+            ));
+
+            boolean isStringField = stringFields.contains(field.toLowerCase());
+
+            // Quote the value if:
+            // 1. NOT a StringField (would cause PhraseQuery error)
+            // 2. Contains spaces, dots, or colons
+            // 3. Not already quoted
+            boolean needsQuoting = !isStringField &&
+                                   (value.contains(" ") || value.contains(".") || value.contains(":")) &&
                                    !value.startsWith("\"") && !value.endsWith("\"");
 
             if (needsQuoting) {
@@ -219,6 +249,9 @@ public class LogSearchService {
                 log.debug("Quoted field value: {}:\"{}\"", field, value);
             } else {
                 matcher.appendReplacement(result, matcher.group(0));
+                if (isStringField && value.contains(" ")) {
+                    log.debug("Skipped quoting for StringField: {}:{} (would cause PhraseQuery error)", field, value);
+                }
             }
         }
         matcher.appendTail(result);

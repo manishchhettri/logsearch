@@ -29,13 +29,25 @@ The system now automatically quotes dot-separated identifiers (package names, cl
 
 **Detection Pattern:**
 ```regex
-\b([a-zA-Z][a-zA-Z0-9_-]*\.[a-zA-Z0-9._-]+)\b
+\b([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)\b
 ```
+
+**Very Conservative Approach:**
+- Only matches **Java package-style** identifiers
+- Must start with **lowercase letter** (package naming convention)
+- Contains only: lowercase letters, digits, underscores, dots
+- **Does NOT match**:
+  - File paths: `/Users/manish/Java Projects/...` (has slashes/uppercase)
+  - Windows paths: `C:\Program Files\...` (has backslash/uppercase)
+  - Class names in logs: `PaymentService.process` (starts with uppercase)
+  - URLs: `http://example.com` (has colon/slashes)
 
 **Rules:**
 1. ✅ Automatically quotes identifiers with dots (e.g., `core.framework`)
 2. ✅ Skips if already quoted (e.g., `"core.framework"`)
-3. ✅ Skips if part of field query (e.g., `sourceFile:core.framework`)
+3. ✅ **Skips entire query if contains field queries** (e.g., `sourceFile:java.lang.Exception`)
+   - This prevents `PhraseQuery` errors on `StringField` fields like `sourceFile`
+   - Field queries are handled separately by existing preprocessing logic
 4. ✅ Skips if contains wildcards (e.g., `core.*.service`)
 5. ✅ Works with boolean operators (e.g., `core.framework OR payment.service`)
 
@@ -85,11 +97,12 @@ This ensures:
 **Search results:** Lucene wildcard search works as expected
 **Highlighting:** `core` and `service` highlighted
 
-### Example 6: Field Query (No Change)
-**Input:** `sourceFile:com.example.Service`
-**Backend:** No change (field query detected)
-**Search results:** Searches specific field
+### Example 6: Field Query (No Auto-Quoting)
+**Input:** `sourceFile:java.lang.Exception`
+**Backend:** No auto-quoting applied (entire query skipped to prevent PhraseQuery on StringField)
+**Search results:** Uses existing field query preprocessing
 **Highlighting:** Works correctly
+**Note:** This prevents `PhraseQuery` errors since `sourceFile` is indexed with `StringField` (no position data)
 
 ### Example 7: Already Quoted (No Change)
 **Input:** `"core.framework"`
